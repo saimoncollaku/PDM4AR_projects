@@ -1,3 +1,4 @@
+from ctypes import sizeof
 from typing import NewType, Tuple
 
 ComparisonOutcome = NewType("ComparisonOutcome", str)
@@ -13,12 +14,17 @@ INDIFFERENT = ComparisonOutcome("indifferent")
 def compare_lexicographic(a: Tuple[float], b: Tuple[float]) -> ComparisonOutcome:
     """
     Implement here your solution.
-    The two tuples represent two vectors of outcomes (e.g. different cost function realizations) for two different decisions.
-    Which one is preferred?
+    The two tuples represent two vectors of outcomes 
+    (e.g. different cost function realizations) for two different 
+    decisions. Which one is preferred?
 
     Note that the terms are sorted lexicographically by importance.
-    For example, the term in position 1 is less important than the one in position 0,
-    but more important than the one in position 2
+    For example, the term in position 1 is less important than the one 
+    in position 0, but more important than the one in position 2
     """
-    # todo: implement the comparison
+    for cost_a, cost_b in zip(a, b):
+        if cost_a < cost_b:
+            return FIRST_PREFERRED
+        if cost_b < cost_a:
+            return SECOND_PREFERRED
     return INDIFFERENT
