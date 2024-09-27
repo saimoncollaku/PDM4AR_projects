@@ -1,5 +1,7 @@
 from abc import abstractmethod, ABC
-from ast import List
+
+from typing import Dict, List, Optional
+from collections import deque
 
 # from networkx import reconstruct_path
 
@@ -21,30 +23,27 @@ class GraphSearch(ABC):
 class DepthFirst(GraphSearch):
     def search(self, graph: AdjacencyList, start: X, goal: X) -> tuple[Path, OpenedNodes]:
         # Init
-        queued: list[X] = [start]
-        visited: list[X] = [start]
+        queue = deque([start])
         opened: list[X] = []
-        parents = []
-        parents.append(None)
+        parents: Dict[X, X | None] = {start: None}
 
-        while queued:
+        while queue:
             # Remove first item in queue
-            current = queued.pop(0)
+            current = queue.popleft()
             opened.append(current)
 
             # Goal state
             if current == goal:
-                path = construct(visited, parents)
+                path = reconstruct_path(parents, start, goal)
                 return path, opened
 
             # Other state
-            to_queue: list[X] = []
+            to_queue = deque([])
             for adjacent in graph.get(current, set()):
-                if adjacent not in visited:
-                    visited.append(adjacent)
+                if adjacent not in parents:
                     to_queue.append(adjacent)
-                    parents.append(current)
-            queued = to_queue + queued
+                    parents[adjacent] = current
+            queue = to_queue + queue
 
         # Failed
         return [], opened
@@ -52,8 +51,29 @@ class DepthFirst(GraphSearch):
 
 class BreadthFirst(GraphSearch):
     def search(self, graph: AdjacencyList, start: X, goal: X) -> tuple[Path, OpenedNodes]:
-        # todo implement here your solution
-        return [], []
+        # Init
+        queue = deque([start])
+        opened: list[X] = []
+        parents: Dict[X, X | None] = {start: None}
+
+        while queue:
+            # Remove first item in queue
+            current = queue.popleft()
+            opened.append(current)
+
+            # Goal state
+            if current == goal:
+                path = reconstruct_path(parents, start, goal)
+                return path, opened
+
+            # Other state
+            for adjacent in graph.get(current, set()):
+                if adjacent not in parents:
+                    queue.append(adjacent)
+                    parents[adjacent] = current
+
+        # Failed
+        return [], opened
 
 
 class IterativeDeepening(GraphSearch):
@@ -62,18 +82,15 @@ class IterativeDeepening(GraphSearch):
         return [], []
 
 
-def construct(visited_nodes: list[X], parent_nodes: list[X]) -> list[X]:
-    # Last of the visited nodes is the goal, start from there
-    last_state = visited_nodes[-1]
-    parent_state = parent_nodes[-1]
-    path = [last_state]
-
-    # Stop when the parent is empty (reached the start)
-    while parent_state is not None:
-        last_state = parent_state
-        parent_state = parent_nodes[visited_nodes.index(last_state)]
-        path.append(last_state)
-
-    path.reverse()
-
-    return path
+def reconstruct_path(parents: Dict[X, Optional[X]], start: X, goal: X) -> Path:
+    path: List[X] = []
+    current: X = goal
+    while current != start:
+        path.append(current)
+        # Just to solve the type hint None problem
+        parent = parents[current]
+        if parent is None:
+            return []
+        current = parent
+    path.append(start)
+    return list(reversed(path))
