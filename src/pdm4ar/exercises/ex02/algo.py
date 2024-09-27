@@ -38,12 +38,11 @@ class DepthFirst(GraphSearch):
                 return path, opened
 
             # Other state
-            to_queue = deque([])
-            for adjacent in graph.get(current, set()):
+            adjacents = sorted(graph.get(current, set()), reverse=True)
+            for adjacent in adjacents:
                 if adjacent not in parents:
-                    to_queue.append(adjacent)
+                    queue.appendleft(adjacent)
                     parents[adjacent] = current
-            queue = deque(sorted(to_queue)) + queue
 
         # Failed
         return [], opened
@@ -67,12 +66,11 @@ class BreadthFirst(GraphSearch):
                 return path, opened
 
             # Other state
-            to_queue = deque([])
-            for adjacent in graph.get(current, set()):
+            adjacents = sorted(graph.get(current, set()))
+            for adjacent in adjacents:
                 if adjacent not in parents:
-                    to_queue.append(adjacent)
+                    queue.append(adjacent)
                     parents[adjacent] = current
-            queue = queue + deque(sorted(to_queue))
 
         # Failed
         return [], opened
@@ -91,6 +89,7 @@ class IterativeDeepening(GraphSearch):
             opened: list[X] = []
             parents: Dict[X, X | None] = {start: None}
             depths: Dict[X, int] = {start: 1}
+            max_d_reached = 1
 
             while queue:
                 # Remove first item in queue
@@ -103,30 +102,24 @@ class IterativeDeepening(GraphSearch):
                     return path, opened
 
                 # Other state
-                to_queue = deque([])
                 if depths[current] < d:
-                    for adjacent in graph.get(current, set()):
+                    adjacents = sorted(graph.get(current, set()), reverse=True)
+                    for adjacent in adjacents:
                         if adjacent not in parents:
-                            to_queue.append(adjacent)
+                            queue.appendleft(adjacent)
                             parents[adjacent] = current
                             depths[adjacent] = depths[current] + 1
-                    queue = deque(sorted(to_queue)) + queue
+                            max_d_reached = max(max_d_reached, depths[adjacent])
 
-            # Checks if the depth provided new states
-            if d not in depths.values():
-                # No path found
+            if max_d_reached < d:
                 return [], opened
 
 
 def reconstruct_path(parents: Dict[X, Optional[X]], start: X, goal: X) -> Path:
-    path: List[X] = []
+    path = deque([])
     current: X = goal
     while current != start:
-        path.append(current)
-        # Just to solve the type hint None problem
-        parent = parents[current]
-        if parent is None:
-            return []
-        current = parent
-    path.append(start)
-    return list(reversed(path))
+        path.appendleft(current)
+        current = parents[current]
+    path.appendleft(start)
+    return list(path)
