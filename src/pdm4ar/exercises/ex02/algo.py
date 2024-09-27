@@ -24,6 +24,7 @@ class DepthFirst(GraphSearch):
     def search(self, graph: AdjacencyList, start: X, goal: X) -> tuple[Path, OpenedNodes]:
         # Init
         queue = deque([start])
+        visited: set[X] = {start}
         opened: list[X] = []
         parents: Dict[X, X | None] = {start: None}
 
@@ -40,8 +41,9 @@ class DepthFirst(GraphSearch):
             # Other state
             adjacents = sorted(graph.get(current, set()), reverse=True)
             for adjacent in adjacents:
-                if adjacent not in parents:
+                if adjacent not in visited:
                     queue.appendleft(adjacent)
+                    visited.add(adjacent)
                     parents[adjacent] = current
 
         # Failed
@@ -52,6 +54,7 @@ class BreadthFirst(GraphSearch):
     def search(self, graph: AdjacencyList, start: X, goal: X) -> tuple[Path, OpenedNodes]:
         # Init
         queue = deque([start])
+        visited: set[X] = {start}
         opened: list[X] = []
         parents: Dict[X, X | None] = {start: None}
 
@@ -68,12 +71,54 @@ class BreadthFirst(GraphSearch):
             # Other state
             adjacents = sorted(graph.get(current, set()))
             for adjacent in adjacents:
-                if adjacent not in parents:
+                if adjacent not in visited:
                     queue.append(adjacent)
+                    visited.add(adjacent)
                     parents[adjacent] = current
 
         # Failed
         return [], opened
+
+
+# class IterativeDeepening(GraphSearch):
+#     def search(self, graph: AdjacencyList, start: X, goal: X) -> tuple[Path, OpenedNodes]:
+
+#         d = 0
+#         while True:
+#             # * DFS with iteration on depth
+#             d += 1
+
+#             # Init
+#             queue = deque([start])
+#             opened: list[X] = []
+#             parents: Dict[X, X | None] = {start: None}
+#             depths: Dict[X, int] = {start: 1}
+#             max_d_reached = 1
+
+#             while queue:
+#                 # Remove first item in queue
+#                 current = queue.popleft()
+#                 opened.append(current)
+
+#                 # Goal state
+#                 if current == goal:
+#                     path = reconstruct_path(parents, start, goal)
+#                     return path, opened
+
+#                 # Other state
+#                 if depths[current] < d:
+#                     adjacents = sorted(graph.get(current, set()), reverse=True)
+#                     for adjacent in adjacents:
+#                         if adjacent not in parents:
+#                             queue.appendleft(adjacent)
+#                             parents[adjacent] = current
+#                             depths[adjacent] = depths[current] + 1
+#                             max_d_reached = max(max_d_reached, depths[adjacent])
+
+#             # Checks if the depth provided new states
+#             if max_d_reached < d:
+#                 # No path found
+#                 return [], opened
 
 
 class IterativeDeepening(GraphSearch):
@@ -86,9 +131,11 @@ class IterativeDeepening(GraphSearch):
 
             # Init
             queue = deque([start])
+            visited: set[X] = {start}
             opened: list[X] = []
             parents: Dict[X, X | None] = {start: None}
             depths: Dict[X, int] = {start: 1}
+            max_d_reached = 1
 
             while queue:
                 # Remove first item in queue
@@ -102,28 +149,25 @@ class IterativeDeepening(GraphSearch):
 
                 # Other state
                 if depths[current] < d:
-                    adjacents = sorted(graph.get(current, set()), reverse=True)
-                    for adjacent in adjacents:
-                        if adjacent not in parents:
+                    for adjacent in sorted(graph.get(current, set()), reverse=True):
+                        if adjacent not in visited:
                             queue.appendleft(adjacent)
+                            visited.add(adjacent)
                             parents[adjacent] = current
                             depths[adjacent] = depths[current] + 1
+                            max_d_reached = max(max_d_reached, depths[adjacent])
 
             # Checks if the depth provided new states
-            if d not in depths.values():
+            if max_d_reached < d:
                 # No path found
                 return [], opened
 
 
 def reconstruct_path(parents: Dict[X, Optional[X]], start: X, goal: X) -> Path:
-    path: List[X] = []
+    path = deque([])
     current: X = goal
     while current != start:
-        path.append(current)
-        # Just to solve the type hint None problem
-        parent = parents[current]
-        if parent is None:
-            return []
-        current = parent
-    path.append(start)
-    return list(reversed(path))
+        path.appendleft(current)
+        current = parents[current]
+    path.appendleft(start)
+    return list(path)
