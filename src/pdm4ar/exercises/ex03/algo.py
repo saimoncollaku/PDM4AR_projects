@@ -87,7 +87,7 @@ class Astar(InformedGraphSearch):
         lon_v, lat_v = self.graph.get_node_coordinates(v)
 
         dist = direct_distance(lat1=lat_u, lat2=lat_v, lon1=lon_u, lon2=lon_v)
-        time = dist / TravelSpeed.HIGHWAY
+        time = dist / TravelSpeed.SECONDARY
 
         return time
 
@@ -98,11 +98,11 @@ class Astar(InformedGraphSearch):
         parents: Dict[X, X | None] = {start: None}
         cost_to_reach: Dict[X, float] = {start: 0}
         opened: list[X] = []
-        w = 1.5
 
         while queue:
             # Remove lowest item in queue
-            current_cost, current = heapq.heappop(queue)
+            _, current = heapq.heappop(queue)
+            current_cost = cost_to_reach[current]
             opened.append(current)
 
             # Goal state
@@ -118,18 +118,12 @@ class Astar(InformedGraphSearch):
                     parents[adjacent] = current
                     cost_to_reach[adjacent] = new_cost
                     heu = self.heuristic(adjacent, goal)
-                    if new_cost < heu:
-                        heapq.heappush(queue, (new_cost + heu, adjacent))
-                    else:
-                        heapq.heappush(queue, ((new_cost + (2 * w - 1) * heu) / w, adjacent))
+                    heapq.heappush(queue, (new_cost + heu, adjacent))
                 elif new_cost < cost_to_reach[adjacent] and adjacent not in opened:
                     parents[adjacent] = current
                     cost_to_reach[adjacent] = new_cost
                     heu = self.heuristic(adjacent, goal)
-                    if new_cost < heu:
-                        heapq.heappush(queue, (new_cost + heu, adjacent))
-                    else:
-                        heapq.heappush(queue, ((new_cost + (2 * w - 1) * heu) / w, adjacent))
+                    heapq.heappush(queue, (new_cost + heu, adjacent))
 
         # Failed
         return []
@@ -162,6 +156,7 @@ import math
 def direct_distance(lat1, lon1, lat2, lon2, earth_radius=6371000):
     """
     Calculate the direct distance through the Earth between two points.
+    Optimized for speed.
 
     Parameters:
     lat1, lon1 : float
@@ -176,13 +171,17 @@ def direct_distance(lat1, lon1, lat2, lon2, earth_radius=6371000):
     """
     # Convert latitude and longitude from degrees to radians
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    # Convert to 3D Cartesian coordinates
-    x1 = earth_radius * math.cos(lat1) * math.cos(lon1)
-    y1 = earth_radius * math.cos(lat1) * math.sin(lon1)
-    z1 = earth_radius * math.sin(lat1)
-    x2 = earth_radius * math.cos(lat2) * math.cos(lon2)
-    y2 = earth_radius * math.cos(lat2) * math.sin(lon2)
-    z2 = earth_radius * math.sin(lat2)
+
+    # Precompute trigonometric functions
+    sin_lat1, cos_lat1 = math.sin(lat1), math.cos(lat1)
+    sin_lat2, cos_lat2 = math.sin(lat2), math.cos(lat2)
+    cos_lon1, cos_lon2 = math.cos(lon1), math.cos(lon2)
+    sin_lon1, sin_lon2 = math.sin(lon1), math.sin(lon2)
+
+    # Calculate differences
+    dx = earth_radius * (cos_lat2 * cos_lon2 - cos_lat1 * cos_lon1)
+    dy = earth_radius * (cos_lat2 * sin_lon2 - cos_lat1 * sin_lon1)
+    dz = earth_radius * (sin_lat2 - sin_lat1)
+
     # Calculate Euclidean distance
-    distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2)
-    return distance
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
