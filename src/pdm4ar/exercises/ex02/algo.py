@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from collections import deque
 
 # from networkx import reconstruct_path
