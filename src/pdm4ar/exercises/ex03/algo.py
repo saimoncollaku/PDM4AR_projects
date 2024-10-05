@@ -86,7 +86,7 @@ class Astar(InformedGraphSearch):
         lon_v, lat_v = self.graph.get_node_coordinates(v)
 
         dist = direct_distance(lat1=lat_u, lat2=lat_v, lon1=lon_u, lon2=lon_v)
-        time = dist / TravelSpeed.CITY
+        time = dist / TravelSpeed.SECONDARY
 
         return time
 
