@@ -1,7 +1,7 @@
 import numpy as np
 
 from pdm4ar.exercises.ex04.mdp import GridMdp, GridMdpSolver
-from pdm4ar.exercises.ex04.structures import ValueFunc, Policy, State, Action
+from pdm4ar.exercises.ex04.structures import ValueFunc, Policy, Action, Cell
 from pdm4ar.exercises_def.ex04.utils import time_function
 
 
@@ -29,6 +29,8 @@ def policy_evaluation(policy: np.ndarray, grid_mdp: GridMdp) -> np.ndarray:
     while True:
         old_V = V.copy()
         for state in np.ndindex(grid_mdp.grid.shape):
+            if grid_mdp.grid[state] == Cell.CLIFF:
+                continue
             action = Action(policy[state])
             V[state] = 0
             for next_state in grid_mdp.get_admissible_next_states(state):
@@ -45,6 +47,8 @@ def policy_improvement(value_fun: np.ndarray, grid_mdp: GridMdp) -> np.ndarray:
     policy = np.zeros_like(grid_mdp.grid).astype(int)
 
     for state in np.ndindex(grid_mdp.grid.shape):
+        if grid_mdp.grid[state] == Cell.CLIFF:
+            continue
         possible_policies = {}
         for action in grid_mdp.get_admissible_actions(state):
             possible_policies[action] = 0

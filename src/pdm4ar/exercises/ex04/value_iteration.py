@@ -1,11 +1,7 @@
-from argparse import Action
-from sre_parse import State
-from matplotlib.pyplot import grid
-import numpy as np
-from sympy import gruntz
 from pdm4ar.exercises.ex04.mdp import GridMdp, GridMdpSolver
 from pdm4ar.exercises.ex04.structures import Policy, ValueFunc, Cell, Action
 from pdm4ar.exercises_def.ex04.utils import time_function
+import numpy as np
 
 
 class ValueIteration(GridMdpSolver):
@@ -14,8 +10,6 @@ class ValueIteration(GridMdpSolver):
     def solve(grid_mdp: GridMdp) -> tuple[ValueFunc, Policy]:
         value_func = np.zeros_like(grid_mdp.grid).astype(float)
         policy = np.zeros_like(grid_mdp.grid).astype(int)
-        # grid_mdp.precompute_all_data()
-        # grid_mdp.create_excel_file()
         # todo implement here
 
         while True:

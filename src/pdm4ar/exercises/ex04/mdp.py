@@ -1,16 +1,9 @@
 from abc import ABC, abstractmethod
-from turtle import st
+from typing import Dict, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
-from traitlets import Bool, Int
 from pdm4ar.exercises.ex04.structures import Action, Policy, State, ValueFunc, Cell
-from typing import Dict, Tuple
-
-import openpyxl
-from itertools import product
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
 
 
 class GridMdp:
@@ -274,70 +267,6 @@ class GridMdp:
 
     def check_next_state_is_adj(self, state: State, next_state: State, admitted_dir: list[Action]) -> bool:
         return any(self.check_next_state_is_dir(state, action, next_state, admitted_dir) for action in admitted_dir)
-
-    def create_excel_file(self, filename: str = "grid_mdp_data.xlsx"):
-        # Create a new workbook and select the active sheet
-        wb = openpyxl.Workbook()
-
-        # Create sheets for probabilities and rewards
-        prob_sheet = wb.active
-        prob_sheet.title = "Transition Probabilities"
-        reward_sheet = wb.create_sheet(title="Rewards")
-
-        # Get all possible states and actions
-        rows, cols = self.grid.shape
-        states = list(product(range(rows), range(cols)))
-        actions = list(Action)
-
-        # Create header row with all possible next states
-        header = ["State_Action"] + [f"{s[0]},{s[1]}" for s in states]
-
-        # Write headers to both sheets
-        for sheet in [prob_sheet, reward_sheet]:
-            sheet.append(header)
-            for cell in sheet[1]:
-                cell.font = Font(bold=True)
-
-        # Populate data for each state-action combination
-        for state in states:
-            for action in actions:
-                state_action = f"{state[0]},{state[1]}_{action.name}"
-                prob_row = [state_action]
-                reward_row = [state_action]
-
-                for next_state in states:
-                    prob = self.get_transition_prob(state, action, next_state)
-                    reward = self.stage_reward(state, action, next_state)
-
-                    prob_row.append(prob)
-                    reward_row.append(reward)
-
-                prob_sheet.append(prob_row)
-                reward_sheet.append(reward_row)
-
-        # Adjust column widths
-        for sheet in [prob_sheet, reward_sheet]:
-            for column in sheet.columns:
-                max_length = 0
-                column_letter = openpyxl.utils.get_column_letter(column[0].column)
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(cell.value)
-                    except:
-                        pass
-                adjusted_width = max_length + 2
-                sheet.column_dimensions[column_letter].width = adjusted_width
-
-        # Save the workbook
-        wb.save(filename)
-
-        print(f"Excel file has been created: {filename}")
-
-    def compute_all_action(self):
-        for state in np.ndindex(self.grid.shape):
-            self.get_admissible_actions(state)
-            self.get_admissible_next_states(state)
 
 
 class GridMdpSolver(ABC):
