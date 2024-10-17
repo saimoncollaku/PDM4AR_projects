@@ -1,9 +1,10 @@
+from argparse import Action
 from sre_parse import State
 from matplotlib.pyplot import grid
 import numpy as np
 from sympy import gruntz
 from pdm4ar.exercises.ex04.mdp import GridMdp, GridMdpSolver
-from pdm4ar.exercises.ex04.structures import Policy, ValueFunc, Cell
+from pdm4ar.exercises.ex04.structures import Policy, ValueFunc, Cell, Action
 from pdm4ar.exercises_def.ex04.utils import time_function
 
 
@@ -28,18 +29,20 @@ class ValueIteration(GridMdpSolver):
                 Q = {}
                 for action in grid_mdp.get_admissible_actions(state):
                     Q[action] = 0
-                    for next_state in grid_mdp.get_admissible_next_states(state):
-                        # Skip cliffs
-                        if grid_mdp.grid[next_state] == Cell.CLIFF:
-                            continue
-                        T = grid_mdp.get_transition_prob(state, action, next_state)
-                        R = grid_mdp.stage_reward(state, action, next_state)
-                        Q[action] += T * (R + grid_mdp.gamma * old_v[next_state])
+                    if action == Action.ABANDON:
+                        T = grid_mdp.get_transition_prob(state, action, grid_mdp.start_state[0])
+                        R = grid_mdp.stage_reward(state, action, grid_mdp.start_state[0])
+                        Q[action] += T * (R + grid_mdp.gamma * old_v[grid_mdp.start_state[0]])
+                    else:
+                        for next_state in grid_mdp.get_admissible_next_states(state):
+                            T = grid_mdp.get_transition_prob(state, action, next_state)
+                            R = grid_mdp.stage_reward(state, action, next_state)
+                            Q[action] += T * (R + grid_mdp.gamma * old_v[next_state])
 
                 value_func[state] = max(Q.values())
                 policy[state] = max(Q, key=Q.get)
 
-            if np.all(value_func - old_v < 1):
+            if np.all(value_func - old_v < 1e-3):
                 break
 
         return value_func, policy

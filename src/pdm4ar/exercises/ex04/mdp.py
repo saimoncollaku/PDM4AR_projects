@@ -1,26 +1,16 @@
 from abc import ABC, abstractmethod
-from operator import ne
-from traceback import print_tb
 from turtle import st
-from xmlrpc.client import Boolean
 
 import numpy as np
 from numpy.typing import NDArray
-from sympy import acot, elliptic_f, false, true
 from traitlets import Bool, Int
 from pdm4ar.exercises.ex04.structures import Action, Policy, State, ValueFunc, Cell
-
-import csv
-import numpy as np
-from itertools import product
-import openpyxl
-from openpyxl.styles import Font
-
-
-import numpy as np
-from numpy.typing import NDArray
-from pdm4ar.exercises.ex04.structures import Action, State, Cell
 from typing import Dict, Tuple
+
+import openpyxl
+from itertools import product
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 
 class GridMdp:
@@ -29,7 +19,7 @@ class GridMdp:
         self.grid = grid
         self.gamma: float = gamma
         self.prob_wormhole = 1 / np.sum(self.grid == Cell.WORMHOLE)
-        self.max = max(grid.flatten())
+        # self.max = max(grid.flatten())
         self.rows, self.cols = grid.shape
 
         self.transition_data: Dict[Tuple[State, Action], Dict[State, float]] = {}
@@ -97,7 +87,7 @@ class GridMdp:
                     Cell.SWAMP: self.compute_prob_swamp,
                     Cell.GOAL: self.compute_prob_goal,
                 }.get(current_cell, lambda *args: 0)
-                for possible_next_state in np.ndindex(self.grid.shape):
+                for possible_next_state in self.get_admissible_next_states(state):
                     prob = prob_fun(state, action, possible_next_state)
                     self.transition_data[state_action_key][possible_next_state] = prob
         return self.transition_data[state_action_key].get(next_state, 0)
@@ -117,7 +107,7 @@ class GridMdp:
                     Cell.SWAMP: self.compute_reward_swamp,
                     Cell.GOAL: self.compute_reward_goal,
                 }.get(current_cell, lambda *args: 0)
-                for possible_next_state in np.ndindex(self.grid.shape):
+                for possible_next_state in self.get_admissible_next_states(state):
                     reward = reward_func(state, action, possible_next_state)
                     self.reward_data[state_action_key][possible_next_state] = reward
         return self.reward_data[state_action_key].get(next_state, 0)
@@ -178,20 +168,20 @@ class GridMdp:
             return 1 if next_cell == Cell.START else 0
 
         if next_cell == Cell.START:
-            prob_cliff = (4 - len(admitted_dir)) * 0.25 / 3
+            prob_cliff = (4 - len(admitted_dir)) * (0.25 / 3)
             if self.check_next_state_is_dir(state, action, next_state, admitted_dir):
                 return 0.75 + prob_cliff
             if self.check_next_state_is_adj(state, next_state, admitted_dir):
-                return 0.25 / 3 + prob_cliff
+                return (0.25 / 3) + prob_cliff
             if action not in admitted_dir:
-                return 0.75 + prob_cliff - 0.25 / 3
+                return 0.75 + prob_cliff - (0.25 / 3)
             return prob_cliff
 
         if next_cell == Cell.WORMHOLE:
             p = 0
             if self.check_dir_to_wormhole(state, action, admitted_dir):
                 p += 0.75 * self.prob_wormhole
-            p += self.check_adj_to_wormhole(state, action, admitted_dir) * (0.25 / 3) * self.prob_wormhole
+            p += self.check_adj_to_wormhole(state, action, admitted_dir) * ((0.25 / 3)) * self.prob_wormhole
             return p
 
         if self.check_next_state_is_dir(state, action, next_state, admitted_dir):
@@ -210,22 +200,22 @@ class GridMdp:
         if action == Action.STAY:
             return 1 if self.check_same_state(state, next_state) else 0
 
-        prob_cliff = (4 - len(admitted_dir)) * 0.25 / 3 + 0.05
+        prob_cliff = (4 - len(admitted_dir)) * (0.25 / 3) + 0.05
 
         if next_cell == Cell.START:
             if self.check_next_state_is_dir(state, action, next_state, admitted_dir):
                 return 0.5 + prob_cliff
             if self.check_next_state_is_adj(state, next_state, admitted_dir):
-                return 0.25 / 3 + prob_cliff
+                return (0.25 / 3) + prob_cliff
             if action not in admitted_dir:
-                return 0.5 + prob_cliff - 0.25 / 3
+                return 0.5 + prob_cliff - (0.25 / 3)
             return prob_cliff
 
         if next_cell == Cell.WORMHOLE:
             p = 0
             if self.check_dir_to_wormhole(state, action, admitted_dir):
                 p += 0.5 * self.prob_wormhole
-            p += self.check_adj_to_wormhole(state, action, admitted_dir) * (0.25 / 3) * self.prob_wormhole
+            p += self.check_adj_to_wormhole(state, action, admitted_dir) * ((0.25 / 3)) * self.prob_wormhole
             return p
 
         if self.check_next_state_is_dir(state, action, next_state, admitted_dir):
@@ -285,7 +275,6 @@ class GridMdp:
     def check_next_state_is_adj(self, state: State, next_state: State, admitted_dir: list[Action]) -> bool:
         return any(self.check_next_state_is_dir(state, action, next_state, admitted_dir) for action in admitted_dir)
 
-    # ... (create_excel_file method remains unchanged)
     def create_excel_file(self, filename: str = "grid_mdp_data.xlsx"):
         # Create a new workbook and select the active sheet
         wb = openpyxl.Workbook()
@@ -344,6 +333,11 @@ class GridMdp:
         wb.save(filename)
 
         print(f"Excel file has been created: {filename}")
+
+    def compute_all_action(self):
+        for state in np.ndindex(self.grid.shape):
+            self.get_admissible_actions(state)
+            self.get_admissible_next_states(state)
 
 
 class GridMdpSolver(ABC):
