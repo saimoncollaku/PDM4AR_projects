@@ -71,7 +71,6 @@ class GridMdp:
             elif self.check_dir_to_wormhole(state, admitted_dir[0], admitted_dir):
                 next_states += self.wormhole_states
             if admitted_dir != 4:
-                next_states += self.start_state
                 if Action.NORTH in admitted_dir:
                     next_states.append((state[0] - 1, state[1]))
                 if Action.SOUTH in admitted_dir:
@@ -152,7 +151,7 @@ class GridMdp:
         if action == Action.ABANDON:
             return -10
         if next_cell == Cell.START:
-            return -12 if len(admitted_dir) != 4 else -2
+            return -12
         if next_cell == Cell.WORMHOLE:
             if self.check_adj_to_wormhole(state, action, admitted_dir) != 0:
                 return -2

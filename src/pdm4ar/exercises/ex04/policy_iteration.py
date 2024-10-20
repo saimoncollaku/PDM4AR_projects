@@ -43,7 +43,7 @@ def policy_evaluation(policy: np.ndarray, grid_mdp: GridMdp) -> np.ndarray:
                     R = grid_mdp.stage_reward(state, action, next_state)
                     V[state] += (grid_mdp.gamma * old_V[next_state] + R) * T
 
-        if np.all(V - old_V < 1e-3):
+        if np.all(V - old_V < 1e-1):
             break
     return V
 

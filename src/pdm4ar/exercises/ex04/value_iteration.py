@@ -35,7 +35,7 @@ class ValueIteration(GridMdpSolver):
                 value_func[state] = max(Q.values())
                 policy[state] = max(Q, key=Q.get)
 
-            if np.all(value_func - old_v < 1e-3):
+            if np.all(value_func - old_v < 1e-2):
                 break
 
         return value_func, policy
