@@ -1,6 +1,8 @@
 from collections.abc import Sequence
+from math import sin, cos, pi, tan
 
 from dg_commons import SE2Transform
+from numpy import arctan
 
 from pdm4ar.exercises.ex05.structures import *
 from pdm4ar.exercises_def.ex05.utils import extract_path_points
@@ -17,7 +19,7 @@ class Dubins(PathPlanner):
         self.params = params
 
     def compute_path(self, start: SE2Transform, end: SE2Transform) -> list[SE2Transform]:
-        """ Generates an optimal Dubins path between start and end configuration
+        """Generates an optimal Dubins path between start and end configuration
 
         :param start: the start configuration of the car (x,y,theta)
         :param end: the end configuration of the car (x,y,theta)
@@ -48,14 +50,42 @@ class ReedsShepp(PathPlanner):
 
 def calculate_car_turning_radius(wheel_base: float, max_steering_angle: float) -> DubinsParam:
     # TODO implement here your solution
-    return DubinsParam(min_radius=0)
+    min_r = wheel_base * tan(pi / 2 - max_steering_angle)
+    return DubinsParam(min_radius=min_r)
 
 
 def calculate_turning_circles(current_config: SE2Transform, radius: float) -> TurningCircle:
     # TODO implement here your solution
-    dummy_circle = Curve.create_circle(center=SE2Transform.identity(), config_on_circle=SE2Transform.identity(),
-                                       radius=0.1, curve_type=DubinsSegmentType.LEFT)  # TODO remove
-    return TurningCircle(left=dummy_circle, right=dummy_circle)
+    c_r = SE2Transform.identity()
+    c_r.p = np.array(
+        [
+            radius * sin(current_config.theta) + current_config.p[0],
+            -radius * cos(current_config.theta) + current_config.p[1],
+        ]
+    )
+
+    c_l = SE2Transform.identity()
+    c_l.p = np.array(
+        [
+            -radius * sin(current_config.theta) + current_config.p[0],
+            +radius * cos(current_config.theta) + current_config.p[1],
+        ]
+    )
+
+    right_circle = Curve.create_circle(
+        center=c_r,
+        config_on_circle=current_config,
+        radius=radius,
+        curve_type=DubinsSegmentType.RIGHT,
+    )
+
+    left_circle = Curve.create_circle(
+        center=c_l,
+        config_on_circle=current_config,
+        radius=radius,
+        curve_type=DubinsSegmentType.LEFT,
+    )
+    return TurningCircle(left=left_circle, right=right_circle)
 
 
 def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> list[Line]:
