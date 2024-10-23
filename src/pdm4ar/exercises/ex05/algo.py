@@ -130,7 +130,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
             path = [start_arc] + path + [end_arc]
             length = path[0].length + path[1].length + path[2].length
 
-            # Check optimality
+            # # Check optimality
             if length < best_length:
                 best_length = length
                 best_path = path
@@ -139,7 +139,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
     # the circle tangent exists
     path = compute_arc_tangent(start_circles.left, end_circles.left)
     if path != []:
-        # LRL path
+        # # LRL path
         start_arc = compute_first_arc(start_circles.left, path[0].start_config, radius)
         end_arc = compute_last_arc(end_circles.left, path[0].end_config, radius)
         path = [start_arc] + path + [end_arc]
@@ -163,39 +163,21 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
 
 
 def calculate_reeds_shepp_path(start_config: SE2Transform, end_config: SE2Transform, radius: float) -> Path:
-    best_path = calculate_dubins_path(start_config, end_config, radius)
-    best_length = best_path[0].length + best_path[1].length + best_path[2].length
-    path = []
+    path_forward = calculate_dubins_path(start_config, end_config, radius)
+    length_forward = path_forward[0].length + path_forward[1].length + path_forward[2].length
+    # length_forward = np.inf
+    # end_config.theta += pi
+    # start_config.theta += pi
+    path_reverse = calculate_dubins_path(end_config, start_config, radius)
+    length_reverse = path_reverse[0].length + path_reverse[1].length + path_reverse[2].length
 
-    start_circles = calculate_turning_circles(end_config, radius)
-    end_circles = calculate_turning_circles(start_config, radius)
-
-    for sc in [start_circles.left, start_circles.right]:
-        for ec in [end_circles.left, end_circles.right]:
-            # Compute and check existence of tangent
-            path = calculate_tangent_btw_circles(sc, ec)
-            if path == []:
-                continue
-
-            # Compute the arcs that connect to the tangents
-            start_arc = compute_first_arc(sc, path[0].start_config, radius)
-            end_arc = compute_last_arc(ec, path[0].end_config, radius)
-
-            # Build path
-            path = [start_arc] + path + [end_arc]
-            length = path[0].length + path[1].length + path[2].length
-
-            # Check optimality
-            if length < best_length:
-                path.reverse()
-                path[0].gear = Gear.REVERSE
-                path[1].gear = Gear.REVERSE
-                path[2].gear = Gear.REVERSE
-                best_length = length
-                best_path = path
+    if length_forward < length_reverse:
+        return path_forward
+    else:
+        return path_reverser(path_reverse)
 
     # Please keep segments with zero length in the return list & return a valid dubins/reeds path!
-    return best_path  # e.g., [Curve(..,gear=Gear.REVERSE), Curve(),..]
+    # e.g., [Curve(..,gear=Gear.REVERSE), Curve(),..]
 
 
 def compute_outer_tangent(circle_start: Curve, circle_end: Curve) -> list[Line]:
@@ -263,6 +245,8 @@ def compute_first_arc(circle_start: Curve, tangent_pt: SE2Transform, radius: flo
 
     if delta < 0:
         delta += 2 * pi
+    elif delta > 2 * pi:
+        delta -= 2 * pi
 
     return Curve(
         start_config=circle_start.start_config,
@@ -289,6 +273,8 @@ def compute_last_arc(circle_end: Curve, tangent_pt: SE2Transform, radius: float)
 
     if delta < 0:
         delta += 2 * pi
+    elif delta > 2 * pi:
+        delta -= 2 * pi
 
     return Curve(
         start_config=tangent_pt,
@@ -314,11 +300,12 @@ def compute_arc_tangent(circle_start: Curve, circle_end: Curve) -> list[Curve]:
         arc_center = circle_start.center.p + 2 * circle_start.radius * np.array(
             [cos(angle - gamma), sin(angle - gamma)]
         )
+        arc_start = circle_start.center.p + circle_start.radius * np.array([cos(angle - gamma), sin(angle - gamma)])
     else:
         arc_center = circle_start.center.p + 2 * circle_start.radius * np.array(
             [cos(angle + gamma), sin(angle + gamma)]
         )
-    arc_start = circle_start.center.p + circle_start.radius * np.array([cos(angle + gamma), sin(angle + gamma)])
+        arc_start = circle_start.center.p + circle_start.radius * np.array([cos(angle + gamma), sin(angle + gamma)])
 
     arc_end = arc_center + circle_start.radius * (circle_end.center.p - arc_center) / np.linalg.norm(
         circle_end.center.p - arc_center
@@ -326,7 +313,7 @@ def compute_arc_tangent(circle_start: Curve, circle_end: Curve) -> list[Curve]:
 
     temp = circle_end.center.p - arc_center
     if circle_start.type == DubinsSegmentType.RIGHT:
-        theta_arc_start = -np.pi / 2 + angle + gamma
+        theta_arc_start = -np.pi / 2 + angle - gamma
         theta_arc_end = np.pi / 2 + np.arctan2(temp[1], temp[0])
     else:
         theta_arc_start = np.pi / 2 + angle + gamma
@@ -347,6 +334,8 @@ def compute_arc_tangent(circle_start: Curve, circle_end: Curve) -> list[Curve]:
 
     if delta < 0:
         delta += 2 * pi
+    elif delta > 2 * pi:
+        delta -= 2 * pi
 
     return [
         Curve(
@@ -358,3 +347,15 @@ def compute_arc_tangent(circle_start: Curve, circle_end: Curve) -> list[Curve]:
             arc_angle=delta,
         )
     ]
+
+
+def path_reverser(path: list[Curve | Line]) -> list[Curve | Line]:
+
+    path.reverse()
+    for piece in path:
+        temp = piece.start_config
+        piece.start_config = piece.end_config
+        piece.end_config = temp
+        piece.gear = Gear.REVERSE
+
+    return path
