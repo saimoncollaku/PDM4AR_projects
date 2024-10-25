@@ -1,9 +1,7 @@
 from collections.abc import Sequence
-from math import atan2, sin, cos, pi, sqrt, tan
+from math import sin, cos, pi, tan
 
 from dg_commons import SE2Transform
-from numpy import arctan
-from zmq import CURVE, curve_keypair
 
 from pdm4ar.exercises.ex05.structures import *
 from pdm4ar.exercises_def.ex05.utils import extract_path_points
@@ -93,12 +91,15 @@ def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> lis
     radius_2x = circle_end.radius + circle_start.radius
 
     if d == 0:
-        return [
-            Line(
-                start_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
-                end_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
-            )
-        ]
+        if circle_end.type != circle_start.type:
+            return []
+        else:
+            return [
+                Line(
+                    start_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
+                    end_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
+                )
+            ]
 
     if radius_2x <= d:
         if circle_end.type != circle_start.type:
@@ -127,7 +128,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
         for ec in [end_circles.left, end_circles.right]:
 
             path = calculate_tangent_btw_circles(sc, ec)
-            if path == []:
+            if not path:
                 continue
 
             # Compute the arcs that connect to the tangents
@@ -143,11 +144,8 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
                 best_length = length
                 best_path = path
 
-    # Here I basically start the LRL path computation and check if
-    # the circle tangent exists
     path = compute_arc_tangent(start_circles.left, end_circles.left)
     if path != []:
-        # # LRL path
         start_arc = compute_first_arc(start_circles.left, path[0].start_config, radius)
         end_arc = compute_last_arc(end_circles.left, path[0].end_config, radius)
         path = [start_arc] + path + [end_arc]
@@ -156,8 +154,9 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
             best_length = length
             best_path = path
 
-        # RLR path
-        path = compute_arc_tangent(start_circles.right, end_circles.right)
+    # RLR path
+    path = compute_arc_tangent(start_circles.right, end_circles.right)
+    if path != []:
         start_arc = compute_first_arc(start_circles.right, path[0].start_config, radius)
         end_arc = compute_last_arc(end_circles.right, path[0].end_config, radius)
         path = [start_arc] + path + [end_arc]
@@ -300,7 +299,10 @@ def compute_arc_tangent(circle_start: Curve, circle_end: Curve) -> list[Curve]:
     if d == 0 or d > 4 * circle_start.radius:
         return []
 
-    gamma = np.arccos(d / (4 * circle_start.radius))
+    try:
+        gamma = np.arccos(d / (4 * circle_start.radius))
+    except:
+        return []
 
     if circle_start.type == DubinsSegmentType.RIGHT:
         arc_center = circle_start.center.p + 2 * circle_start.radius * np.array(
