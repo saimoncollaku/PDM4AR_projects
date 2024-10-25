@@ -50,7 +50,7 @@ class ReedsShepp(PathPlanner):
 
 
 def calculate_car_turning_radius(wheel_base: float, max_steering_angle: float) -> DubinsParam:
-    min_r = wheel_base * tan(pi / 2 - max_steering_angle)
+    min_r = wheel_base / tan(max_steering_angle)
     return DubinsParam(min_radius=min_r)
 
 
@@ -92,6 +92,14 @@ def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> lis
     d = np.linalg.norm(circle_end.center.p - circle_start.center.p, ord=2)
     radius_2x = circle_end.radius + circle_start.radius
 
+    if d == 0:
+        return [
+            Line(
+                start_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
+                end_config=SE2Transform(circle_start.start_config.p, circle_start.start_config.theta),
+            )
+        ]
+
     if radius_2x <= d:
         if circle_end.type != circle_start.type:
             return compute_inner_tangent(circle_start, circle_end)
@@ -117,7 +125,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
 
     for sc in [start_circles.left, start_circles.right]:
         for ec in [end_circles.left, end_circles.right]:
-            # Compute and check existence of tangent
+
             path = calculate_tangent_btw_circles(sc, ec)
             if path == []:
                 continue
@@ -128,7 +136,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
 
             # Build path
             path = [start_arc] + path + [end_arc]
-            length = path[0].length + path[1].length + path[2].length
+            length = sum(segment.length for segment in path)
 
             # # Check optimality
             if length < best_length:
@@ -143,7 +151,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
         start_arc = compute_first_arc(start_circles.left, path[0].start_config, radius)
         end_arc = compute_last_arc(end_circles.left, path[0].end_config, radius)
         path = [start_arc] + path + [end_arc]
-        length = path[0].length + path[1].length + path[2].length
+        length = sum(segment.length for segment in path)
         if length < best_length:
             best_length = length
             best_path = path
@@ -153,7 +161,7 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
         start_arc = compute_first_arc(start_circles.right, path[0].start_config, radius)
         end_arc = compute_last_arc(end_circles.right, path[0].end_config, radius)
         path = [start_arc] + path + [end_arc]
-        length = path[0].length + path[1].length + path[2].length
+        length = sum(segment.length for segment in path)
         if length < best_length:
             best_length = length
             best_path = path
@@ -164,12 +172,10 @@ def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, 
 
 def calculate_reeds_shepp_path(start_config: SE2Transform, end_config: SE2Transform, radius: float) -> Path:
     path_forward = calculate_dubins_path(start_config, end_config, radius)
-    length_forward = path_forward[0].length + path_forward[1].length + path_forward[2].length
-    # length_forward = np.inf
-    # end_config.theta += pi
-    # start_config.theta += pi
+    length_forward = sum(segment.length for segment in path_forward)
+
     path_reverse = calculate_dubins_path(end_config, start_config, radius)
-    length_reverse = path_reverse[0].length + path_reverse[1].length + path_reverse[2].length
+    length_reverse = sum(segment.length for segment in path_reverse)
 
     if length_forward < length_reverse:
         return path_forward
