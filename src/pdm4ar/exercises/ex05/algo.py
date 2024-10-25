@@ -101,7 +101,7 @@ def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> lis
                 )
             ]
 
-    if radius_2x <= d:
+    if radius_2x < d:
         if circle_end.type != circle_start.type:
             return compute_inner_tangent(circle_start, circle_end)
         else:
@@ -110,6 +110,12 @@ def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> lis
     if radius_2x > d:
         if circle_end.type != circle_start.type:
             return []
+        else:
+            return compute_outer_tangent(circle_start, circle_end)
+
+    if radius_2x == d:
+        if circle_end.type != circle_start.type:
+            return compute_zero_tangent(circle_start, circle_end)
         else:
             return compute_outer_tangent(circle_start, circle_end)
 
@@ -367,3 +373,23 @@ def path_reverser(path: list[Curve | Line]) -> list[Curve | Line]:
         piece.gear = Gear.REVERSE
 
     return path
+
+
+def compute_zero_tangent(start_circle: Curve, end_circle: Curve) -> list[Line]:
+    middle = (end_circle.center.p + start_circle.center.p) / 2
+    d_vector = end_circle.center.p - start_circle.center.p
+    d = np.linalg.norm(d_vector)
+
+    angle = np.arctan2(d_vector[1], d_vector[0])
+
+    if start_circle.type == DubinsSegmentType.LEFT:
+        angle += np.pi / 2
+    else:
+        angle -= np.pi / 2
+
+    return [
+        Line(
+            start_config=SE2Transform(middle, angle),
+            end_config=SE2Transform(middle, angle),
+        )
+    ]
