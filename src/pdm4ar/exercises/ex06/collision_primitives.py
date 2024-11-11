@@ -1,5 +1,6 @@
 from pdm4ar.exercises_def.ex06.structures import *
 from triangle import triangulate
+import triangle as tr
 import numpy as np
 from typing import Union, Optional
 
@@ -27,7 +28,7 @@ class CollisionPrimitives_SeparateAxis:
 
     # Task 1
     @staticmethod
-    def proj_polygon(p: Union[Polygon, Circle], ax: Segment) -> Segment:
+    def proj_polygon(p: Union[Polygon, Circle, Triangle], ax: Segment) -> Segment:
         """
         Project the Polygon onto the axis, represented as a Segment.
         Inputs:
@@ -38,14 +39,31 @@ class CollisionPrimitives_SeparateAxis:
         segment: a (shorter) segment with start and endpoints of where the polygon has been projected to.
 
         """
-        start_1 = 0  # placeholder
-        end_1 = 0  # placeholder
-        start_2 = 0  # placeholder
-        end_2 = 0  # placeholder
+        p1 = np.array([ax.p1.x, ax.p1.y])
+        p2 = np.array([ax.p2.x, ax.p2.y])
+        d = p2 - p1
+        d_normalized = d / np.linalg.norm(d)
 
-        # TODO: Implement function
-        raise NotImplementedError  # remove when you have written your code
-        return Segment(Point(start_1, end_1), Point(start_2, end_2))
+        if isinstance(p, Polygon):
+
+            v = np.array([[vertex.x, vertex.y] for vertex in p.vertices])
+            projections = np.dot(v - p1, d_normalized)
+            min_proj = np.min(projections)
+            max_proj = np.max(projections)
+            min_point = p1 + min_proj * d_normalized
+            max_point = p1 + max_proj * d_normalized
+
+            return Segment(Point(min_point[0], min_point[1]), Point(max_point[0], max_point[1]))
+        if isinstance(p, Circle):
+            center = np.array([p.center.x, p.center.y])
+            v = center - p1
+            proj_length = np.dot(v, d_normalized)
+            proj_center = p1 + proj_length * d_normalized
+            proj_start = proj_center - d_normalized * p.radius
+            proj_end = proj_center + d_normalized * p.radius
+            return Segment(Point(proj_start[0], proj_start[1]), Point(proj_end[0], proj_end[1]))
+        if isinstance(p, Triangle):
+            pass
 
     # Task 2.a
     @staticmethod
@@ -59,11 +77,10 @@ class CollisionPrimitives_SeparateAxis:
         Outputs:
         bool: True if segments overlap. False o.w.
         """
-        placeholder = True  # placeholder
 
-        # TODO: Implement Function
-        raise NotImplementedError  # remove when you have written your code
-        return placeholder
+        seg1_start, seg1_end = min(s1.p1.x, s1.p2.x), max(s1.p1.x, s1.p2.x)
+        seg2_start, seg2_end = min(s2.p1.x, s2.p2.x), max(s2.p1.x, s2.p2.x)
+        return (seg1_start <= seg2_end) and (seg2_start <= seg1_end)
 
     # Task 2.b
     @staticmethod
@@ -78,10 +95,35 @@ class CollisionPrimitives_SeparateAxis:
         Outputs:
         list[Segment]: A list of segments of size N (worldlength) that represent each of the valid separating axes for the two polygons.
         """
-        axes = []  # Populate with Segment types
 
-        # TODO: Implement function
-        raise NotImplementedError  # remove when you have written your code
+        vertices1 = np.array([[v.x, v.y] for v in p1.vertices])
+        edges1 = np.diff(np.vstack([vertices1, vertices1[0]]), axis=0)
+        normals1 = np.column_stack([-edges1[:, 1], edges1[:, 0]])
+        # norms1 = np.linalg.norm(normals1, axis=1, keepdims=True)
+        axes1 = normals1  # / norms1
+
+        vertices2 = np.array([[v.x, v.y] for v in p2.vertices])
+        edges2 = np.diff(np.vstack([vertices2, vertices2[0]]), axis=0)
+        normals2 = np.column_stack([-edges2[:, 1], edges2[:, 0]])
+        # norms2 = np.linalg.norm(normals2, axis=1, keepdims=True)
+        axes2 = normals2  # / norms2
+
+        all_axes = np.vstack([axes1, axes2])
+        abs_axes = np.abs(all_axes)
+        sum_abs_axes = abs_axes.sum(axis=1)
+        min_abs_axis = all_axes[np.argmin(sum_abs_axes)]
+        k = min(1 / np.abs(min_abs_axis).min(), 1)
+        starts = -all_axes * 20 * k
+        ends = all_axes * 20 * k
+        axes = []
+        for start, end in zip(starts, ends):
+            axes.append(Segment(Point(start[0], start[1]), Point(end[0], end[1])))
+        # axes = []
+        # for ax in np.vstack([axes1, axes2]):
+        #     start = Point(-ax[0] * 20, -ax[1] * 20)
+        #     end = Point(ax[0] * 20, ax[1] * 20)
+        #     axes.append(Segment(start, end))
+
         return axes
 
     # Task 2.c
@@ -114,16 +156,35 @@ class CollisionPrimitives_SeparateAxis:
 
         if isinstance(p2, Polygon):  # Task 2c
 
-            # TODO: Implement your solution for if polygon here. Exercise 2
-            raise NotImplementedError  # remove when you have written your code
-            # return (bool, axis)
+            axes = CollisionPrimitives_SeparateAxis.get_axes(p1, p2)
+            for axis in axes:
+                # Project both polygons onto the axis
+                proj1 = CollisionPrimitives_SeparateAxis.proj_polygon(p1, axis)
+                proj2 = CollisionPrimitives_SeparateAxis.proj_polygon(p2, axis)
+
+                # Check for overlap
+                if not CollisionPrimitives_SeparateAxis.overlap(proj1, proj2):
+                    # If projections do not overlap, return False and the axis
+                    return False, axis
+
+            # If all projections overlap, the polygons collide
+            return True, None
 
         elif isinstance(p2, Circle):  # Task 3b
 
-            # TODO: Implement your solution for SAT for circles here. Exercise 3
-            # raise NotImplementedError
-            raise NotImplementedError  # remove when you have written your code
-            # return (bool, axis)
+            axes = CollisionPrimitives_SeparateAxis.get_axes_cp(p2, p1)
+            for axis in axes:
+                # Project both polygons onto the axis
+                proj1 = CollisionPrimitives_SeparateAxis.proj_polygon(p1, axis)
+                proj2 = CollisionPrimitives_SeparateAxis.proj_polygon(p2, axis)
+
+                # Check for overlap
+                if not CollisionPrimitives_SeparateAxis.overlap(proj1, proj2):
+                    # If projections do not overlap, return False and the axis
+                    return False, axis
+
+            # If all projections overlap, the polygons collide
+            return True, None
 
         else:
             print("If we get here we have done a big mistake - TAs")
@@ -144,8 +205,35 @@ class CollisionPrimitives_SeparateAxis:
         """
         axes = []
 
-        # TODO
-        raise NotImplementedError  # remove when you have written your code
+        vertices = np.array([[v.x, v.y] for v in poly.vertices])
+        edges1 = np.diff(np.vstack([vertices, vertices[0]]), axis=0)
+        normals = np.column_stack([-edges1[:, 1], edges1[:, 0]])
+        # norms = np.linalg.norm(normals, axis=1, keepdims=True)
+        # axes1 = normals / norms
+        axes1 = normals
+
+        center = np.array([circ.center.x, circ.center.y])
+        distances = np.linalg.norm(center - vertices, axis=1)
+        closest_idx = np.argmin(distances)
+        line = center - vertices[closest_idx]
+        # extra_ax = [line / np.linalg.norm(line)]
+        extra_ax = line
+
+        all_axes = np.vstack([axes1, extra_ax])
+        abs_axes = np.abs(all_axes)
+        sum_abs_axes = abs_axes.sum(axis=1)
+        min_abs_axis = all_axes[np.argmin(sum_abs_axes)]
+        k = min(1 / np.abs(min_abs_axis).min(), 1)
+        starts = -all_axes * 20 * k
+        ends = all_axes * 20 * k
+
+        for start, end in zip(starts, ends):
+            axes.append(Segment(Point(start[0], start[1]), Point(end[0], end[1])))
+        # for ax in np.vstack([axes1, extra_ax]):
+        #     start = Point(-ax[0] * 20, -ax[1] * 20)
+        #     end = Point(ax[0] * 20, ax[1] * 20)
+        #     axes.append(Segment(start, end))
+
         return axes
 
 
@@ -184,20 +272,11 @@ class CollisionPrimitives:
         Outputs:
         bool: True if in Collision, False otherwise.
         """
-        area_orig = np.abs(
-            (t.v2.x - t.v1.x) * (t.v3.y - t.v1.y)
-            - (t.v3.x - t.v1.x) * (t.v2.y - t.v1.y)
-        )
+        area_orig = np.abs((t.v2.x - t.v1.x) * (t.v3.y - t.v1.y) - (t.v3.x - t.v1.x) * (t.v2.y - t.v1.y))
 
-        area1 = np.abs(
-            (t.v1.x - p.x) * (t.v2.y - p.y) - (t.v2.x - p.x) * (t.v1.y - p.y)
-        )
-        area2 = np.abs(
-            (t.v2.x - p.x) * (t.v3.y - p.y) - (t.v3.x - p.x) * (t.v2.y - p.y)
-        )
-        area3 = np.abs(
-            (t.v3.x - p.x) * (t.v1.y - p.y) - (t.v1.x - p.x) * (t.v3.y - p.y)
-        )
+        area1 = np.abs((t.v1.x - p.x) * (t.v2.y - p.y) - (t.v2.x - p.x) * (t.v1.y - p.y))
+        area2 = np.abs((t.v2.x - p.x) * (t.v3.y - p.y) - (t.v3.x - p.x) * (t.v2.y - p.y))
+        area3 = np.abs((t.v3.x - p.x) * (t.v1.y - p.y) - (t.v1.x - p.x) * (t.v3.y - p.y))
 
         if np.abs(area1 + area2 + area3 - area_orig) < 1e-3:
             return True
@@ -216,9 +295,7 @@ class CollisionPrimitives:
         Outputs
         bool: True if in Collision, False otherwise.
         """
-        triangulation_result = tr.triangulate(
-            dict(vertices=np.array([[v.x, v.y] for v in poly.vertices]))
-        )
+        triangulation_result = tr.triangulate(dict(vertices=np.array([[v.x, v.y] for v in poly.vertices])))
 
         triangles = [
             Triangle(
@@ -226,9 +303,7 @@ class CollisionPrimitives:
                 Point(triangle[1, 0], triangle[1, 1]),
                 Point(triangle[2, 0], triangle[2, 1]),
             )
-            for triangle in triangulation_result["vertices"][
-                triangulation_result["triangles"]
-            ]
+            for triangle in triangulation_result["vertices"][triangulation_result["triangles"]]
         ]
 
         for t in triangles:
@@ -270,21 +345,13 @@ class CollisionPrimitives:
         )
 
         # Check whether point is on the segment segment or not
-        segment_len_1 = np.sqrt(
-            (segment.p1.x - closest_point.x) ** 2
-            + (segment.p1.y - closest_point.y) ** 2
-        )
-        segment_len_2 = np.sqrt(
-            (segment.p2.x - closest_point.x) ** 2
-            + (segment.p2.y - closest_point.y) ** 2
-        )
+        segment_len_1 = np.sqrt((segment.p1.x - closest_point.x) ** 2 + (segment.p1.y - closest_point.y) ** 2)
+        segment_len_2 = np.sqrt((segment.p2.x - closest_point.x) ** 2 + (segment.p2.y - closest_point.y) ** 2)
 
         if np.abs(segment_len_1 + segment_len_2 - segment_len) > 1e-3:
             return False
 
-        closest_dist = np.sqrt(
-            (c.center.x - closest_point.x) ** 2 + (c.center.y - closest_point.y) ** 2
-        )
+        closest_dist = np.sqrt((c.center.x - closest_point.x) ** 2 + (c.center.y - closest_point.y) ** 2)
 
         if closest_dist < c.radius:
             return True
@@ -386,6 +453,4 @@ class CollisionPrimitives:
         x_values = [v.x for v in g.vertices]
         y_values = [v.y for v in g.vertices]
 
-        return AABB(
-            Point(min(x_values), min(y_values)), Point(max(x_values), max(y_values))
-        )
+        return AABB(Point(min(x_values), min(y_values)), Point(max(x_values), max(y_values)))
