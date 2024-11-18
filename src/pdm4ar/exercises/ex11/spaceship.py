@@ -26,7 +26,7 @@ class SpaceshipDyn:
 
         self.x = spy.Matrix(spy.symbols("x y psi vx vy dpsi delta m", real=True))  # states
         self.u = spy.Matrix(spy.symbols("thrust ddelta", real=True))  # inputs
-        self.p = spy.Matrix([spy.symbols('t_f', positive=True)])  # final time
+        self.p = spy.Matrix([spy.symbols("t_f", positive=True)])  # final time
 
         self.n_x = self.x.shape[0]  # number of states
         self.n_u = self.u.shape[0]  # number of inputs
@@ -40,6 +40,24 @@ class SpaceshipDyn:
         """
         # Dynamics
         f = spy.zeros(self.n_x, 1)
+
+        # Position dynamics
+        f[0] = self.x[3] * spy.cos(self.x[2]) - self.x[4] * spy.sin(self.x[2])
+        f[1] = self.x[3] * spy.sin(self.x[2]) + self.x[4] * spy.cos(self.x[2])
+
+        # Orientation dynamics
+        f[2] = self.x[5]
+
+        # Fuel dynamics
+        f[3] = -self.sp.C_T * self.u[0]
+
+        # Velocity dynamics
+        f[4] = (self.u[0] / self.x[7]) * spy.cos(self.x[6]) + self.x[4] * self.x[5]
+        f[5] = (self.u[0] / self.x[7]) * spy.sin(self.x[6]) - self.x[3] * self.x[5]
+
+        # Angular velocity dynamics
+        f[6] = -(self.sg.l_r * self.u[0] * spy.sin(self.x[6])) / self.sg.Iz
+        f[7] = self.u[1]  # ? IS THIS ACTUALLY CORRECT?
 
         A = f.jacobian(self.x)
         B = f.jacobian(self.u)
