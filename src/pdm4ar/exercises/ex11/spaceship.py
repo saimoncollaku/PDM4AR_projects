@@ -48,16 +48,16 @@ class SpaceshipDyn:
         # Orientation dynamics
         f[2] = self.x[5]
 
-        # Fuel dynamics
-        f[3] = -self.sp.C_T * self.u[0]
-
         # Velocity dynamics
-        f[4] = (self.u[0] / self.x[7]) * spy.cos(self.x[6]) + self.x[4] * self.x[5]
-        f[5] = (self.u[0] / self.x[7]) * spy.sin(self.x[6]) - self.x[3] * self.x[5]
+        f[3] = (self.u[0] / self.x[7]) * spy.cos(self.x[6]) + self.x[4] * self.x[5]
+        f[4] = (self.u[0] / self.x[7]) * spy.sin(self.x[6]) - self.x[3] * self.x[5]
 
         # Angular velocity dynamics
-        f[6] = -(self.sg.l_r * self.u[0] * spy.sin(self.x[6])) / self.sg.Iz
-        f[7] = self.u[1]  # ? IS THIS ACTUALLY CORRECT?
+        f[5] = -(self.sg.l_r * self.u[0] * spy.sin(self.x[6])) / self.sg.Iz
+        f[6] = self.u[1]  # ? IS THIS ACTUALLY CORRECT?
+
+        # Fuel dynamics
+        f[7] = -self.sp.C_T * self.u[0]
 
         A = f.jacobian(self.x)
         B = f.jacobian(self.u)
