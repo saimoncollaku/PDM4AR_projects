@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from sqlite3.dbapi2 import Timestamp
 from typing import Sequence
 
 from dg_commons import DgSampledSequence, PlayerName
@@ -14,12 +15,15 @@ from pdm4ar.exercises.ex11.planner import SpaceshipPlanner
 from pdm4ar.exercises_def.ex11.goal import SpaceshipTarget, DockingTarget
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class MyAgentParams:
     """
     You can for example define some agent parameters.
     """
+
     my_tol: float = 0.1
 
 
@@ -45,10 +49,10 @@ class SpaceshipAgent(Agent):
     sp: SpaceshipParameters
 
     def __init__(
-            self,
-            init_state: SpaceshipState,
-            satellites: dict[PlayerName, SatelliteParams],
-            planets: dict[PlayerName, PlanetParams],
+        self,
+        init_state: SpaceshipState,
+        satellites: dict[PlayerName, SatelliteParams],
+        planets: dict[PlayerName, PlanetParams],
     ):
         """
         Initializes the agent.
@@ -69,13 +73,36 @@ class SpaceshipAgent(Agent):
         self.myname = init_sim_obs.my_name
         self.sg = init_sim_obs.model_geometry
         self.sp = init_sim_obs.model_params
-        self.planner = SpaceshipPlanner(planets=self.planets, satellites=self.satellites, sg=self.sg, sp=self.sp)
+
+        self.bounds = None
+        for obs in init_sim_obs.dg_scenario.static_obstacles:
+            if obs.shape.geom_type == "LineString":
+                self.bounds = obs.shape.bounds
+
+        self.planner = SpaceshipPlanner(
+            planets=self.planets,
+            satellites=self.satellites,
+            sg=self.sg,
+            sp=self.sp,
+            bounds=self.bounds,
+            tolerances=[init_sim_obs.goal.pos_tol, init_sim_obs.goal.vel_tol, init_sim_obs.goal.dir_tol],
+        )
         assert isinstance(init_sim_obs.goal, SpaceshipTarget | DockingTarget)
         self.goal_state = init_sim_obs.goal.target
 
-        #
-        # TODO: Implement Compute Initial Trajectory
-        #
+        # self.K = self.planner.params.K
+        # self.final_state = SpaceshipState(
+        #     self.goal_state.x,
+        #     self.goal_state.y,
+        #     self.goal_state.psi,
+        #     self.goal_state.vx,
+        #     self.goal_state.vy,
+        #     self.goal_state.dpsi,
+        #     0,
+        #     self.init_state.m,
+        # )
+
+        # self.planner.set_initial_reference(self.init_state, self.final_state)
 
         self.cmds_plan, self.state_traj = self.planner.compute_trajectory(self.init_state, self.goal_state)
 

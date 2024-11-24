@@ -59,6 +59,9 @@ class SpaceshipDyn:
         # Fuel dynamics
         f[7] = -self.sp.C_T * self.u[0]
 
+        # normalized time dynamics
+        f = f * self.p
+
         A = f.jacobian(self.x)
         B = f.jacobian(self.u)
         F = f.jacobian(self.p)
