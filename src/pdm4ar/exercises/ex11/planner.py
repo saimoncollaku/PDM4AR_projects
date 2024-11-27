@@ -266,7 +266,7 @@ class SpaceshipPlanner:
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
             self.variables["p"] >= 0,
-            # self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
+            self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
             # ]
             # boundary_constraints = [
             self.variables["X"][0, :] >= self.bounds[0],
