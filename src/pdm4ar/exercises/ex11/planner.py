@@ -13,6 +13,7 @@ from dg_commons.sim.models.spaceship_structures import (
     SpaceshipGeometry,
     SpaceshipParameters,
 )
+from scipy import linalg
 
 from pdm4ar.exercises.ex11.discretization import *
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
@@ -319,7 +320,7 @@ class SpaceshipPlanner:
         for k in range(self.params.K - 1):
             reg_constraint = (
                 cvx.abs(self.variables["U"][1, k + 1] - self.variables["U"][1, k])
-                <= self.spaceship.sp.ddelta_limits[1] / 8
+                <= self.spaceship.sp.ddelta_limits[1] / 4
             )
             constraints.append(reg_constraint)
 
@@ -333,6 +334,16 @@ class SpaceshipPlanner:
         constraints.append(trust_constraint)
 
         # virtual control constraints (Eq55),
+        # for name, planet in self.planets.items():
+        #     for k in range(self.params.K):
+        #         H = 1 / ((planet.radius + self.r_s) ** 2)
+        #         Δr = self.problem_parameters["X_ref"][0:2, k] - planet.center
+        #         Δx = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
+        #         ξ = H * (cvx.norm2(Δr) ** 2)
+        #         ζ = 2 * H * Δr
+        #         obs_costraint = ξ + ζ @ Δx >= 1 - self.variables["nu_" + str(name)]
+        #         constraints.append(obs_costraint)
+
         for name, planet in self.planets.items():
             for k in range(self.params.K):
                 H = 1 / (planet.radius + self.r_s)
@@ -342,14 +353,6 @@ class SpaceshipPlanner:
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
                 obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
                 constraints.append(obs_costraint)
-            # center = np.array(planet.center)
-            # radius = planet.radius + self.r_s
-            # for k in range(self.params.K):
-            #     C = -2.0 * (self.variables["X"][0:2, k] - center)
-            #     s = ((radius) ** 2) - (cvx.norm2(self.variables["X"][0:2, k] - center) ** 2)
-            #     r_dash = s - C @ self.problem_parameters["X_ref"][0:2, k]
-            #     obs_constraint = C @ self.variables["X"][0:2, k] + r_dash <= self.variables["nu_" + str(name)][k]
-            #     constraints.append(obs_constraint)
 
         return constraints
 
@@ -399,7 +402,7 @@ class SpaceshipPlanner:
         Check convergence of SCvx.
         """
         actual_cost = self.J(self.X_bar, self.U_bar, self.p_bar)
-        linearized_cost = self.L(nu_dyn, nu_obs)
+        linearized_cost = self.L(self.p_bar, nu_dyn, nu_obs)
         print("J: ", actual_cost)
         print("L: ", linearized_cost)
 
@@ -419,6 +422,7 @@ class SpaceshipPlanner:
         J_opt = self.J(self.variables["X"].value, self.variables["U"].value, self.variables["p"].value)
         J_bar = self.J(self.X_bar, self.U_bar, self.p_bar)
         L_opt = self.L(
+            self.variables["p"].value,
             self.variables["nu_dyn"].value,
             {name: self.variables["nu_" + str(name)].value for name in self.planets},
         )
@@ -457,19 +461,47 @@ class SpaceshipPlanner:
 
     def J(self, X, U, p):
         φ = self.integrator.integrate_nonlinear_piecewise(X, U, p)
-        δ = np.linalg.norm(X - φ, 1)
+        δ = X - φ
 
         # Nonconvex path constraints, equation 39e
         s = 0
         for _, param in self.planets.items():
             dist = np.linalg.norm(X[0:2, :].T - param.center, 2, axis=1)
+            # s += np.sum(np.maximum((param.radius + self.r_s) ** 2 - dist**2, 0))
             s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
-        return δ + s
+        return np.linalg.norm(δ, 1) + s
 
-    def L(self, nu_dyn, nu_obs):
+        # Γ = np.zeros(self.params.K)
+        # for k in range(self.params.K):
+        #     for _, planet in self.planets.items():
+        #         s = ((planet.radius + self.r_s) ** 2) - (np.linalg.norm(X[0:2, k] - planet.center, 2) ** 2)
+        #         Γ[k] += self.params.lambda_nu * (np.linalg.norm(δ[:, k], 1) + np.abs(np.maximum(s, 0)))
+        #         # dist = np.linalg.norm(X[0:2, :].T - param.center, 2, axis=1)
+        #         # s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+        # J = 0
+        # for k in range(self.params.K - 1):
+        #     J = Γ[k] + Γ[k + 1]
+        # J /= 2 * self.params.K
+        # J += p
+
+        return J
+
+    def L(self, p, nu_dyn, nu_obs):
         # eqns 52-54
         cost = np.linalg.norm(nu_dyn, 1)
         cost += np.sum([nu for nu in nu_obs.values()])
-
         return cost
+
+        # Γ = np.zeros(self.params.K)
+        # for k in range(1, self.params.K):
+        #     for name, _ in self.planets.items():
+        #         Γ[k] += self.params.lambda_nu * (np.linalg.norm(nu_dyn[:, k - 1], 1) + np.abs(nu_obs[name][k]))
+
+        # J = 0
+        # for k in range(self.params.K - 1):
+        #     J = Γ[k] + Γ[k + 1]
+        # J /= 2 * self.params.K
+        # J += p
+
+        # return J
