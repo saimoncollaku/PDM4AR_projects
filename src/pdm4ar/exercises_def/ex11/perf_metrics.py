@@ -65,9 +65,13 @@ class AvgPlayerMetrics(PerformanceResults):
         """Higher is better"""
         score = (self.goal_success_rate - self.collision_rate) * 1e3
         score -= self.avg_computation_time * 1e2
-        score -= (self.avg_distance2goal / 2 + self.avg_distance_travelled / 5 +
-                  self.avg_episode_duration / 5 + self.avg_actuation_effort) * 1e1
-        score += self.avg_fuel_left * 5e1
+        score -= (
+            self.avg_distance2goal / 2
+            + self.avg_distance_travelled / 5
+            + self.avg_episode_duration / 5
+            + self.avg_actuation_effort
+        ) * 1e1
+        # score += self.avg_fuel_left * 5e1
         return score
 
 
@@ -86,7 +90,8 @@ def ex11_metrics(sim_context: SimContext) -> Tuple[AvgPlayerMetrics, List[Player
         # if the last state of the sim is inside the goal
         last_state = states.values[-1]
         has_reached_the_goal: bool = sim_context.missions[player_name].is_fulfilled(
-                last_state, at=states.timestamps[-1])
+            last_state, at=states.timestamps[-1]
+        )
 
         # collision
         has_collided = True if player_name in collided_players else False
@@ -122,15 +127,15 @@ def ex11_metrics(sim_context: SimContext) -> Tuple[AvgPlayerMetrics, List[Player
 
         # create the player metrics
         pm = PlayerMetrics(
-                player_name=player_name,
-                goal_reached=has_reached_the_goal,
-                collided=has_collided,
-                travelled_distance=dist,
-                episode_duration=duration,
-                distance2goal=distance2goal,
-                actuation_effort=actuation_effort,
-                avg_computation_time=avg_comp_time,
-                fuel_left=fuel_left
+            player_name=player_name,
+            goal_reached=has_reached_the_goal,
+            collided=has_collided,
+            travelled_distance=dist,
+            episode_duration=duration,
+            distance2goal=distance2goal,
+            actuation_effort=actuation_effort,
+            avg_computation_time=avg_comp_time,
+            fuel_left=fuel_left,
         )
         agents_perf.append(pm)
 
@@ -144,14 +149,14 @@ def ex11_metrics(sim_context: SimContext) -> Tuple[AvgPlayerMetrics, List[Player
     avg_fuel_left = np.average([p.fuel_left for p in agents_perf])
 
     avg_player_metrics = AvgPlayerMetrics(
-            goal_success_rate=goal_success_rate,
-            collision_rate=collision_rate,
-            avg_distance_travelled=avg_travelled_distance,
-            avg_episode_duration=avg_duration,
-            avg_distance2goal=avg_distance2goal,
-            avg_actuation_effort=avg_actuation_effort,
-            avg_computation_time=avg_computation_time,
-            avg_fuel_left=avg_fuel_left
+        goal_success_rate=goal_success_rate,
+        collision_rate=collision_rate,
+        avg_distance_travelled=avg_travelled_distance,
+        avg_episode_duration=avg_duration,
+        avg_distance2goal=avg_distance2goal,
+        avg_actuation_effort=avg_actuation_effort,
+        avg_computation_time=avg_computation_time,
+        avg_fuel_left=avg_fuel_left,
     )
 
     return avg_player_metrics, agents_perf
