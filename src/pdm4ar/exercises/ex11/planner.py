@@ -38,11 +38,11 @@ class SolverParameters:
     tr_radius: float = 5  # initial trust region radius
     min_tr_radius: float = 1e-4  # min trust region radius
     max_tr_radius: float = 100  # max trust region radius
-    rho_0: float = 0.4  # trust region 0
-    rho_1: float = 0.7  # trust region 1
-    rho_2: float = 0.9  # trust region 2
-    alpha: float = 2.5  # div factor trust region update
-    beta: float = 2.5  # mult factor trust region update
+    rho_0: float = 0.0  # trust region 0: reject solution
+    rho_1: float = 0.1  # trust region 1: accept solution, shrink trust region
+    rho_2: float = 0.9  # trust region 2: accept solution, same trust region
+    alpha: float = 2.0  # div factor trust region update
+    beta: float = 3.2  # mult factor trust region update
 
     # Discretization constants
     K: int = 50  # number of discretization steps
@@ -89,6 +89,7 @@ class SpaceshipPlanner:
         """
         self.planets = planets
         self.satellites = satellites
+        print(self.satellites)
         self.sg = sg
         self.sp = sp
 
@@ -117,7 +118,11 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        # self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+
+        self.problem_parameters["X_ref"].value = self.X_bar
+        self.problem_parameters["U_ref"].value = self.U_bar
+        self.problem_parameters["p_ref"].value = self.p_bar
 
         # Constraints
         constraints = self._get_constraints()
@@ -152,7 +157,11 @@ class SpaceshipPlanner:
         self.first_iteration = True
 
         # set reference trajectory X_bar, U_bar, p_bar
-        self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        self.X_bar, self.U_bar, self.p_bar = self.reinitialize_guess()
+
+        self.problem_parameters["X_ref"].value = self.X_bar
+        self.problem_parameters["U_ref"].value = self.U_bar
+        self.problem_parameters["p_ref"].value = self.p_bar
 
         for i in range(self.params.max_iterations):
             self._convexification()
@@ -164,9 +173,13 @@ class SpaceshipPlanner:
                 print(f"SolverError: {self.params.solver} failed to solve the problem.")
             print(str(i) + ":  ", self.problem.status)
 
+            nu_obs = {name: self.variables["nu_" + str(name)].value for name in self.planets}
+            for name in self.satellites:
+                nu_obs[name] = self.variables["nu_" + str(name)].value
+
             if self.problem.status != "infeasible" and self._check_convergence(
                 self.variables["nu_dyn"].value,
-                {name: self.variables["nu_" + name].value for name in self.planets},
+                nu_obs,
             ):
                 print("Converged in {} iterations..".format(i))
                 print(self.variables["p"].value)
@@ -199,11 +212,37 @@ class SpaceshipPlanner:
         U = np.zeros((self.spaceship.n_u, K))
         p = np.ones((self.spaceship.n_p))
 
+        X[0, :] = np.linspace(self.bounds[0], self.bounds[2], K)
+        X[1, :] = np.linspace(self.bounds[1], self.bounds[3], K)
+        X[2, :] = np.linspace(0, 3.14, K)
+        X[7, :] = 2.5
+        # U[:] = np.linspace(self.spaceship.sp.thrust_limits[0], self.spaceship.sp.thrust_limits[1], K)
+        U[:] = 0
+        p[0] = 10.0
+
+        # print(X.shape, U.shape, p.shape)
+        # assert X.shape == (self.spaceship.n_x, K)
+        # assert U.shape == (self.spaceship.n_u, K)
+        # assert p.shape == (self.spaceship.n_p)
+
+        return X, U, p
+
+    def reinitialize_guess(self) -> tuple[NDArray, NDArray, NDArray]:
+        """
+        Define initial guess for SCvx.
+        """
+        K = self.params.K
+
+        X = np.zeros((self.spaceship.n_x, K))
+        U = np.zeros((self.spaceship.n_u, K))
+        p = np.ones((self.spaceship.n_p))
+
         X[0, :] = np.linspace(self.init_state.x, self.goal_state.x, K)
         X[1, :] = np.linspace(self.init_state.y, self.goal_state.y, K)
         X[2, :] = np.linspace(self.init_state.psi, self.goal_state.psi, K)
         X[7, :] = self.init_state.m
-        U[:] = 0
+        # U[:] = np.linspace(self.spaceship.sp.thrust_limits[0], self.spaceship.sp.thrust_limits[1], K)
+        U[:]
         p[0] = 10.0
 
         # print(X.shape, U.shape, p.shape)
@@ -232,6 +271,8 @@ class SpaceshipPlanner:
         }
 
         for name in self.planets:
+            variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
+        for name in self.satellites:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
         return variables
@@ -351,7 +392,28 @@ class SpaceshipPlanner:
                 δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
                 ξ = cvx.norm2(H * Δr)
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
-                obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
+                obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)][k]
+                constraints.append(obs_costraint)
+
+        for name, satellite in self.satellites.items():
+            planet_name = name.split("/")[0]
+            H = 1 / (satellite.radius + self.r_s)
+            for k in range(self.params.K):
+                t = k / self.params.K
+                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + satellite.tau
+                Δθ = np.array([np.cos(θ), np.sin(θ)])
+                # print(θ, Δθ)
+                satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
+                # print(satellite_center, self.planets[planet_name].center)
+                Δr = self.problem_parameters["X_ref"][0:2, k] - satellite_center
+                δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
+                ξ = cvx.norm2(H * Δr)
+                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                δθ = np.array([-np.sin(θ), np.cos(θ)])
+                δp = self.variables["p"] - self.problem_parameters["p_ref"]
+                γ = (ζ @ δθ) * satellite.omega * δp * t
+                obs_costraint = ξ + ζ @ δr - γ >= 1 - self.variables["nu_" + str(name)][k]
+                # print(obs_costraint)
                 constraints.append(obs_costraint)
 
         return constraints
@@ -364,6 +426,7 @@ class SpaceshipPlanner:
         objective = self.params.weight_p @ self.variables["p"]
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
+        objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
 
         return cvx.Minimize(objective)
 
@@ -419,13 +482,13 @@ class SpaceshipPlanner:
             self.first_iteration = False
             return
 
+        nu_obs = {name: self.variables["nu_" + str(name)].value for name in self.planets}
+        for name in self.satellites:
+            nu_obs[name] = self.variables["nu_" + str(name)].value
+
         J_opt = self.J(self.variables["X"].value, self.variables["U"].value, self.variables["p"].value)
         J_bar = self.J(self.X_bar, self.U_bar, self.p_bar)
-        L_opt = self.L(
-            self.variables["p"].value,
-            self.variables["nu_dyn"].value,
-            {name: self.variables["nu_" + str(name)].value for name in self.planets},
-        )
+        L_opt = self.L(self.variables["p"].value, self.variables["nu_dyn"].value, nu_obs)
         rho = (J_bar - J_opt) / (J_bar - L_opt)
 
         if rho >= self.params.rho_0:
@@ -464,13 +527,24 @@ class SpaceshipPlanner:
         δ = X - φ
 
         # Nonconvex path constraints, equation 39e
-        s = 0
+        s_p = 0
         for _, param in self.planets.items():
             dist = np.linalg.norm(X[0:2, :].T - param.center, 2, axis=1)
             # s += np.sum(np.maximum((param.radius + self.r_s) ** 2 - dist**2, 0))
+            s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+
+        s = 0
+        for name, param in self.satellites.items():
+            planet_name = name.split("/")[0]
+            planet_center = self.planets[planet_name].center
+            centers = np.zeros((2, self.params.K))
+            for k in range(self.params.K):
+                theta = param.omega * p[0] * k / self.params.K + param.tau
+                centers[:, k] = planet_center + param.orbit_r * np.array([np.cos(theta), np.sin(theta)])
+            dist = np.linalg.norm(X[0:2, :].T - centers[:, k].T, 2, axis=1)
             s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
-        return np.linalg.norm(δ, 1) + s
+        return np.linalg.norm(δ, 1) + s + s_p
 
         # Γ = np.zeros(self.params.K)
         # for k in range(self.params.K):
@@ -491,6 +565,8 @@ class SpaceshipPlanner:
         # eqns 52-54
         cost = np.linalg.norm(nu_dyn, 1)
         cost += np.sum([nu for nu in nu_obs.values()])
+        # for name in nu_obs:
+        # print(name, nu_obs[name])
         return cost
 
         # Γ = np.zeros(self.params.K)
