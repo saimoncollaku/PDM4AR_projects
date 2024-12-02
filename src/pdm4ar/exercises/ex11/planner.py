@@ -119,9 +119,9 @@ class SpaceshipPlanner:
         self.verbose = True
         self.iteration = 0
         self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
-        self.visualize = True
+        self.visualize = False
         self.vis_per_iters = 10
-        self.vis_iter = 10
+        self.vis_iter = -1
 
     def compute_trajectory(
         self, init_state: SpaceshipState, goal_state: DynObstacleState
