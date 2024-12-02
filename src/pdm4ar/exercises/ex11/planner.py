@@ -36,11 +36,11 @@ class SolverParameters:
     tr_radius: float = 5  # initial trust region radius
     min_tr_radius: float = 1e-4  # min trust region radius
     max_tr_radius: float = 100  # max trust region radius
-    rho_0: float = 0.4  # trust region 0
-    rho_1: float = 0.7  # trust region 1
-    rho_2: float = 0.9  # trust region 2
-    alpha: float = 2.5  # div factor trust region update
-    beta: float = 2.5  # mult factor trust region update
+    rho_0: float = 0.0  # trust region 0
+    rho_1: float = 0.25  # trust region 1
+    rho_2: float = 0.7  # trust region 2
+    alpha: float = 2.0  # div factor trust region update
+    beta: float = 3.2  # mult factor trust region update
 
     # Discretization constants
     K: int = 50  # number of discretization steps
@@ -353,6 +353,16 @@ class SpaceshipPlanner:
                 obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
                 constraints.append(obs_costraint)
 
+            for k in range(self.params.K - 1):
+                H = 1 / (planet.radius + self.r_s)
+                pt = 0.5 * self.problem_parameters["X_ref"][0:2, k] + 0.5 * self.problem_parameters["X_ref"][0:2, k + 1]
+                Δr = pt - planet.center
+                δr = self.variables["X"][0:2, k] - pt
+                ξ = cvx.norm2(H * Δr)
+                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
+                constraints.append(obs_costraint)
+
         return constraints
 
     def _get_objective(self) -> Union[cvx.Minimize, cvx.Maximize]:
@@ -470,6 +480,11 @@ class SpaceshipPlanner:
         for _, param in self.planets.items():
             dist = np.linalg.norm(X[0:2, :].T - param.center, 2, axis=1)
             s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+
+            for k in range(self.params.K - 1):
+                midpt = 0.5 * X[0:2, k].T + 0.5 * X[0:2, k + 1].T
+                dist = np.linalg.norm(midpt - param.center, 2)
+                s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
         s_p = 0
         b = 0
