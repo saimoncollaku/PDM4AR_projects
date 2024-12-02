@@ -119,7 +119,7 @@ class SpaceshipPlanner:
         self.verbose = True
         self.iteration = 0
         self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
-        self.visualize = False
+        self.visualize = True
         self.vis_per_iters = 10
         self.vis_iter = -1
 
@@ -186,7 +186,11 @@ class SpaceshipPlanner:
                 break
 
             if self.visualize and self.iteration % self.vis_per_iters == 0:
-                self.visualizer.vis_iter(self.iteration, self.variables["X"].value, self.variables["p"].value)
+                self.visualizer.vis_iter(
+                    self.iteration,
+                    self.variables["X"].value,
+                    self.variables["p"].value,
+                )
 
             self._update_trust_region()
             self.iteration += 1
@@ -250,6 +254,8 @@ class SpaceshipPlanner:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
         for name in self.satellites:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
+        for name in self.satellites:
+            variables["kappa_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
         return variables
 
@@ -306,6 +312,11 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(control_constraints)
             # docking_constraints = [
+            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= self.pos_tol,
+            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= self.pos_tol,
+            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
+            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= self.vel_tol,
+            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= self.vel_tol,
         ]
         # constraints.extend(docking_constraints)
 
@@ -332,7 +343,7 @@ class SpaceshipPlanner:
         for k in range(self.params.K - 1):
             reg_constraint = (
                 cvx.abs(self.variables["U"][1, k + 1] - self.variables["U"][1, k])
-                <= self.spaceship.sp.ddelta_limits[1] / 8
+                <= self.spaceship.sp.ddelta_limits[1] / 4
             )
             constraints.append(reg_constraint)
 
@@ -367,22 +378,23 @@ class SpaceshipPlanner:
                 constraints.append(obs_constraint)
 
         for name, satellite in self.satellites.items():
+            constraints.append(self.variables["kappa_" + str(name)] <= self.r_s - 2 * self.sg.width)
             for k in range(self.params.K):
                 planet_name = name.split("/")[0]
-                H = 1 / (satellite.radius + self.r_s)
+                r = satellite.radius + self.r_s - self.variables["kappa_" + str(name)][k]
                 t = k / self.params.K
                 θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + satellite.tau
                 Δθ = np.array([np.cos(θ), np.sin(θ)])
                 satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
                 Δr = self.problem_parameters["X_ref"][0:2, k] - satellite_center
                 δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
-                ξ = cvx.norm2(H * Δr)
-                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                ξ = cvx.norm2(Δr)
+                ζ = Δr / (cvx.norm2(Δr) + 1e-5)
                 δθ = np.array([-np.sin(θ), np.cos(θ)])
                 δp = self.variables["p"] - self.problem_parameters["p_ref"]
                 γ = satellite.orbit_r * satellite.omega * δp * t
                 δf = δr - γ * δθ
-                obs_constraint = ξ + ζ @ δf >= 1 - self.variables["nu_" + str(name)][k]
+                obs_constraint = ξ + ζ @ δf >= r - self.variables["nu_" + str(name)][k]
                 constraints.append(obs_constraint)
 
         if self.visualize and self.iteration == self.vis_iter:
@@ -524,7 +536,7 @@ class SpaceshipPlanner:
                 theta = param.omega * p[0] * k / self.params.K + param.tau
                 centers[:, k] = planet_center + param.orbit_r * np.array([np.cos(theta), np.sin(theta)])
             dist = np.linalg.norm(X[0:2, :].T - centers.T, 2, axis=1)
-            s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+            s += np.sum(np.maximum((param.radius + self.r_s - self.variables["kappa_" + str(name)].value) - dist, 0))
 
         b = 0
         if self.verbose:
