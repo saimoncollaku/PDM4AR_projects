@@ -93,11 +93,12 @@ class SpaceshipPlanner:
         self.bounds = bounds
         # print(bounds)
         self.pos_tol, self.vel_tol, self.dir_tol = tolerances
-        self.r_s = 2 * min(
-            np.sqrt(self.sg.w_half**2 + self.sg.l_r**2),
-            np.sqrt(self.sg.w_half**2 + self.sg.l_f**2),
-            self.sg.l_f + self.sg.l_c,
-        )
+        # self.r_s = max(
+        #     np.sqrt(self.sg.w_half**2 + self.sg.l_r**2),
+        #     np.sqrt(self.sg.w_half**2 + self.sg.l_f**2),
+        #     self.sg.l_f + self.sg.l_c,
+        # )
+        self.r_s = self.sg.l
 
         # Solver Parameters
         self.params = SolverParameters()
@@ -114,15 +115,6 @@ class SpaceshipPlanner:
 
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
-
-        # self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
-        constraints = self._get_constraints()
-
-        # Objective
-        objective = self._get_objective()
-
-        # Cvx Optimisation Problem
-        self.problem = cvx.Problem(objective, constraints)
 
         self.verbose = True
         self.iteration = 0
@@ -152,26 +144,23 @@ class SpaceshipPlanner:
         print(self.init_state, self.goal_state)
 
         self.problem_parameters["eta"].value = self.params.tr_radius
-        self.first_iteration = True
 
         # set reference trajectory X_bar, U_bar, p_bar
         self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
-            # Constraints
-            # constraints = self._get_constraints()
 
-            # # Objective
-            # objective = self._get_objective()
+            constraints = self._get_constraints()
+            objective = self._get_objective()
+            self.problem = cvx.Problem(objective, constraints)
 
-            # # Cvx Optimisation Problem
-            # self.problem = cvx.Problem(objective, constraints)
             try:
                 error = self.problem.solve(verbose=self.params.verbose_solver, solver=self.params.solver)
             except cvx.SolverError:
                 print(f"SolverError: {self.params.solver} failed to solve the problem.")
             print(str(self.iteration) + ":  ", self.problem.status)
+            print("[t_f]: {}".format(round(self.variables["p"].value[0], 6)))
 
             if self.problem.status != "infeasible" and self._check_convergence(
                 self.variables["nu_dyn"].value,
@@ -314,11 +303,6 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(control_constraints)
             # docking_constraints = [
-            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= self.pos_tol,
-            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= self.pos_tol,
-            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
-            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= self.vel_tol,
-            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= self.vel_tol,
         ]
         # constraints.extend(docking_constraints)
 
@@ -425,13 +409,6 @@ class SpaceshipPlanner:
         """
         Update trust region radius.
         """
-        if self.first_iteration:
-            self.X_bar = self.variables["X"].value
-            self.U_bar = self.variables["U"].value
-            self.p_bar = self.variables["p"].value
-            self.first_iteration = False
-            return
-
         J_opt = self.J(self.variables["X"].value, self.variables["U"].value, self.variables["p"].value)
         J_bar = self.J(self.X_bar, self.U_bar, self.p_bar)
         L_opt = self.L(
