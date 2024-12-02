@@ -93,7 +93,7 @@ class SpaceshipPlanner:
         self.bounds = bounds
         # print(bounds)
         self.pos_tol, self.vel_tol, self.dir_tol = tolerances
-        # self.r_s = max(
+        # self.r_s = 1.2 * max(
         #     np.sqrt(self.sg.w_half**2 + self.sg.l_r**2),
         #     np.sqrt(self.sg.w_half**2 + self.sg.l_f**2),
         #     self.sg.l_f + self.sg.l_c,
@@ -121,7 +121,7 @@ class SpaceshipPlanner:
         self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
         self.visualize = True
         self.vis_per_iters = 10
-        self.vis_iter = 40
+        self.vis_iter = 10
 
     def compute_trajectory(
         self, init_state: SpaceshipState, goal_state: DynObstacleState
@@ -165,6 +165,7 @@ class SpaceshipPlanner:
             if self.problem.status != "infeasible" and self._check_convergence(
                 self.variables["nu_dyn"].value,
                 {name: self.variables["nu_" + name].value for name in self.planets},
+                {name: self.variables["nu_" + name].value for name in self.satellites},
             ):
                 print("Converged in {} iterations..".format(self.iteration))
                 print(self.variables["p"].value.round(6))
@@ -180,8 +181,8 @@ class SpaceshipPlanner:
                     print("Obstacles:, ")
                     for name in self.planets:
                         print(name, self.variables["nu_" + str(name)].value.round(6))
-                    # for name in self.satellites:
-                    # print(name, self.variables["nu_" + str(name)].value.round(6))
+                    for name in self.satellites:
+                        print(name, self.variables["nu_" + str(name)].value.round(6))
                 break
 
             if self.visualize and self.iteration % self.vis_per_iters == 0:
@@ -246,6 +247,8 @@ class SpaceshipPlanner:
         }
 
         for name in self.planets:
+            variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
+        for name in self.satellites:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
         return variables
@@ -350,8 +353,8 @@ class SpaceshipPlanner:
                 δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
                 ξ = cvx.norm2(H * Δr)
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
-                obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
-                constraints.append(obs_costraint)
+                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
+                constraints.append(obs_constraint)
 
             for k in range(self.params.K - 1):
                 H = 1 / (planet.radius + self.r_s)
@@ -360,8 +363,32 @@ class SpaceshipPlanner:
                 δr = self.variables["X"][0:2, k] - pt
                 ξ = cvx.norm2(H * Δr)
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
-                obs_costraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
-                constraints.append(obs_costraint)
+                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
+                constraints.append(obs_constraint)
+
+        for name, satellite in self.satellites.items():
+            for k in range(self.params.K):
+                planet_name = name.split("/")[0]
+                H = 1 / (satellite.radius + self.r_s)
+                t = k / self.params.K
+                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + satellite.tau
+                Δθ = np.array([np.cos(θ), np.sin(θ)])
+                satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
+                Δr = self.problem_parameters["X_ref"][0:2, k] - satellite_center
+                δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
+                ξ = cvx.norm2(H * Δr)
+                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                δθ = np.array([-np.sin(θ), np.cos(θ)])
+                δp = self.variables["p"] - self.problem_parameters["p_ref"]
+                γ = satellite.orbit_r * satellite.omega * δp * t
+                δf = δr - γ * δθ
+                obs_constraint = ξ + ζ @ δf >= 1 - self.variables["nu_" + str(name)][k]
+                constraints.append(obs_constraint)
+
+        if self.visualize and self.iteration == self.vis_iter:
+            self.visualizer.vis_k(
+                self.vis_iter, self.problem_parameters["X_ref"].value, self.problem_parameters["p_ref"].value
+            )
 
         return constraints
 
@@ -373,6 +400,7 @@ class SpaceshipPlanner:
         objective = self.params.weight_p @ self.variables["p"]
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
+        objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
 
         return cvx.Minimize(objective)
 
@@ -400,12 +428,12 @@ class SpaceshipPlanner:
         self.problem_parameters["init_state"].value = self.X_bar[:, 0]
         self.problem_parameters["goal_state"].value = self.goal_state.as_ndarray()
 
-    def _check_convergence(self, nu_dyn, nu_obs) -> bool:
+    def _check_convergence(self, nu_dyn, nu_planets, nu_satellites) -> bool:
         """
         Check convergence of SCvx.
         """
         actual_cost = self.J(self.X_bar, self.U_bar, self.p_bar)
-        linearized_cost = self.L(nu_dyn, nu_obs)
+        linearized_cost = self.L(nu_dyn, nu_planets, nu_satellites)
         if self.verbose:
             print(
                 "[Convergence] J = {}, L = {}, J - L = {}".format(
@@ -424,6 +452,7 @@ class SpaceshipPlanner:
         L_opt = self.L(
             self.variables["nu_dyn"].value,
             {name: self.variables["nu_" + str(name)].value for name in self.planets},
+            {name: self.variables["nu_" + str(name)].value for name in self.satellites},
         )
         rho = (J_bar - J_opt) / (J_bar - L_opt)
         if self.verbose:
@@ -476,36 +505,51 @@ class SpaceshipPlanner:
         δ = np.linalg.norm(X - φ, 1)
 
         # Nonconvex path constraints, equation 39e
-        s = 0
+        s_p = 0
         for _, param in self.planets.items():
             dist = np.linalg.norm(X[0:2, :].T - param.center, 2, axis=1)
-            s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+            s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
             for k in range(self.params.K - 1):
                 midpt = 0.5 * X[0:2, k].T + 0.5 * X[0:2, k + 1].T
                 dist = np.linalg.norm(midpt - param.center, 2)
-                s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+                s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
-        s_p = 0
+        s = 0
+        for name, param in self.satellites.items():
+            planet_name = name.split("/")[0]
+            planet_center = self.planets[planet_name].center
+            centers = np.zeros((2, self.params.K))
+            for k in range(self.params.K):
+                theta = param.omega * p[0] * k / self.params.K + param.tau
+                centers[:, k] = planet_center + param.orbit_r * np.array([np.cos(theta), np.sin(theta)])
+            dist = np.linalg.norm(X[0:2, :].T - centers.T, 2, axis=1)
+            s += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
+
         b = 0
         if self.verbose:
             print(
                 "[J]: defect = {}, planet_obs = {}, satellite_obs = {}, boundary_obs = {}".format(
-                    round(δ, 6), round(s, 6), round(s_p, 6), round(b, 6)
+                    round(δ, 6), round(s_p, 6), round(s, 6), round(b, 6)
                 )
             )
 
-        return δ + s
+        return δ + s_p + s
 
-    def L(self, nu_dyn, nu_obs):
+    def L(self, nu_dyn, nu_planets, nu_satellites):
         # eqns 52-54
         cost = np.linalg.norm(nu_dyn, 1)
-        cost += np.sum([nu for nu in nu_obs.values()])
+        cost += np.sum([nu for nu in nu_planets.values()])
+        cost += np.sum([nu for nu in nu_satellites.values()])
+
+        # print(nu_planets, nu_satellites)
+
         if self.verbose:
             print(
-                "[L]: nu_dyn = {}, nu_obs = {}".format(
+                "[L]: nu_dyn = {}, nu_planets = {}, nu_satellites = {}".format(
                     round(np.linalg.norm(nu_dyn, 1), 6),
-                    round(np.sum([nu for nu in nu_obs.values()]), 6),
+                    round(np.sum([nu for nu in nu_planets.values()]), 6),
+                    round(np.sum([nu for nu in nu_satellites.values()]), 6),
                     # round(np.sum(nu_bounds), 6),
                 )
             )
