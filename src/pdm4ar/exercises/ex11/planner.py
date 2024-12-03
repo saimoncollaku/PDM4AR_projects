@@ -97,7 +97,6 @@ class SpaceshipPlanner:
         self.sp = sp
 
         self.bounds = bounds
-        # print(bounds)
         self.pos_tol, self.vel_tol, self.dir_tol = tolerances
         # self.r_s = 1.2 * max(
         #     np.sqrt(self.sg.w_half**2 + self.sg.l_r**2),
