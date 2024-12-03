@@ -12,6 +12,12 @@ from dg_commons.sim.models.spaceship_structures import (
     SpaceshipParameters,
 )
 
+import os
+import heapq
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from numpy import False_
+
 from pdm4ar.exercises.ex11.discretization import *
 from pdm4ar.exercises.ex11.visualization import Visualizer
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
@@ -36,15 +42,15 @@ class SolverParameters:
     tr_radius: float = 5  # initial trust region radius
     min_tr_radius: float = 1e-4  # min trust region radius
     max_tr_radius: float = 100  # max trust region radius
-    rho_0: float = 0.0  # trust region 0
-    rho_1: float = 0.25  # trust region 1
+    rho_0: float = 0.3  # trust region 0
+    rho_1: float = 0.5  # trust region 1
     rho_2: float = 0.7  # trust region 2
-    alpha: float = 2.0  # div factor trust region update
-    beta: float = 3.2  # mult factor trust region update
+    alpha: float = 3  # div factor trust region update
+    beta: float = 2  # mult factor trust region update
 
     # Discretization constants
     K: int = 50  # number of discretization steps
-    N_sub: int = 5  # used inside ode solver inside discretization
+    N_sub: int = 6  # used inside ode solver inside discretization
     stop_crit: float = 1e-5  # Stopping criteria constant
 
 
@@ -116,10 +122,10 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        self.verbose = True
+        self.verbose = False
         self.iteration = 0
-        self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
-        self.visualize = True
+        # self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
+        self.visualize = False
         self.vis_per_iters = 10
         self.vis_iter = -1
 
@@ -147,6 +153,7 @@ class SpaceshipPlanner:
 
         # set reference trajectory X_bar, U_bar, p_bar
         self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        # self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
@@ -185,12 +192,12 @@ class SpaceshipPlanner:
                         print(name, self.variables["nu_" + str(name)].value.round(6))
                 break
 
-            if self.visualize and self.iteration % self.vis_per_iters == 0:
-                self.visualizer.vis_iter(
-                    self.iteration,
-                    self.variables["X"].value,
-                    self.variables["p"].value,
-                )
+            # if self.visualize and self.iteration % self.vis_per_iters == 0:
+            #     self.visualizer.vis_iter(
+            #         self.iteration,
+            #         self.variables["X"].value,
+            #         self.variables["p"].value,
+            #     )
 
             self._update_trust_region()
             self.iteration += 1
@@ -291,12 +298,13 @@ class SpaceshipPlanner:
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
             self.variables["p"] >= 0,
             self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
+            self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
             # boundary_constraints = [
-            self.variables["X"][0, :] >= self.bounds[0],
-            self.variables["X"][1, :] >= self.bounds[1],
-            self.variables["X"][0, :] <= self.bounds[2],
-            self.variables["X"][1, :] <= self.bounds[3],
+            self.variables["X"][0, :] >= self.bounds[0] + self.sg.l / 2,
+            self.variables["X"][1, :] >= self.bounds[1] + self.sg.l / 2,
+            self.variables["X"][0, :] <= self.bounds[2] - self.sg.l / 2,
+            self.variables["X"][1, :] <= self.bounds[3] - self.sg.l / 2,
             self.variables["X"][6, :] >= self.spaceship.sp.delta_limits[0],
             self.variables["X"][6, :] <= self.spaceship.sp.delta_limits[1],
             self.variables["X"][7, :] >= self.spaceship.sp.m_v,
@@ -312,11 +320,16 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(control_constraints)
             # docking_constraints = [
-            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= self.pos_tol,
-            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= self.pos_tol,
-            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
-            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= self.vel_tol,
-            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= self.vel_tol,
+            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
+            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
+            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
+            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
+            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
+            cvx.norm2(self.variables["X"][0, -2] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
+            cvx.norm2(self.variables["X"][1, -2] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
+            cvx.norm2(self.variables["X"][2, -2] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
+            cvx.norm2(self.variables["X"][3, -2] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
+            cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
         ]
         # constraints.extend(docking_constraints)
 
@@ -343,7 +356,7 @@ class SpaceshipPlanner:
         for k in range(self.params.K - 1):
             reg_constraint = (
                 cvx.abs(self.variables["U"][1, k + 1] - self.variables["U"][1, k])
-                <= self.spaceship.sp.ddelta_limits[1] / 4
+                <= self.spaceship.sp.ddelta_limits[1] / 8
             )
             constraints.append(reg_constraint)
 
@@ -363,7 +376,7 @@ class SpaceshipPlanner:
                 Δr = self.problem_parameters["X_ref"][0:2, k] - planet.center
                 δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
                 ξ = cvx.norm2(H * Δr)
-                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-6)
                 obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
                 constraints.append(obs_constraint)
 
@@ -374,7 +387,7 @@ class SpaceshipPlanner:
                 δr = self.variables["X"][0:2, k] - pt
                 ξ = cvx.norm2(H * Δr)
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
-                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
+                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)][k]
                 constraints.append(obs_constraint)
 
         for name, satellite in self.satellites.items():
@@ -397,10 +410,10 @@ class SpaceshipPlanner:
                 obs_constraint = ξ + ζ @ δf >= r - self.variables["nu_" + str(name)][k]
                 constraints.append(obs_constraint)
 
-        if self.visualize and self.iteration == self.vis_iter:
-            self.visualizer.vis_k(
-                self.vis_iter, self.problem_parameters["X_ref"].value, self.problem_parameters["p_ref"].value
-            )
+        # if self.visualize and self.iteration == self.vis_iter:
+        #     self.visualizer.vis_k(
+        #         self.vis_iter, self.problem_parameters["X_ref"].value, self.problem_parameters["p_ref"].value
+        #     )
 
         return constraints
 
@@ -413,6 +426,7 @@ class SpaceshipPlanner:
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
+        objective += cvx.sum_squares(self.variables["U"]) * 0.8
 
         return cvx.Minimize(objective)
 
@@ -523,8 +537,7 @@ class SpaceshipPlanner:
             s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
             for k in range(self.params.K - 1):
-                midpt = 0.5 * X[0:2, k].T + 0.5 * X[0:2, k + 1].T
-                dist = np.linalg.norm(midpt - param.center, 2)
+                dist = np.linalg.norm(X[0:2, k].T - param.center, 2)
                 s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
         s = 0
@@ -567,3 +580,240 @@ class SpaceshipPlanner:
             )
 
         return cost
+
+    def initial_guess_astar(self):
+        """
+        Generate an initial guess for SCvx using the A* algorithm.
+        """
+        # Extract world bounds from self.bounds
+        x_min = self.bounds[0] + self.sg.l / 2
+        y_min = self.bounds[1] + self.sg.l / 2
+        x_max = self.bounds[2] - self.sg.l / 2
+        y_max = self.bounds[3] - self.sg.l / 2
+        grid_resolution = 0.1  # Size of each grid cell
+        grid_size_x = int((x_max - x_min) / grid_resolution)
+        grid_size_y = int((y_max - y_min) / grid_resolution)
+
+        # Create grid and mark occupied cells
+        grid = np.zeros((grid_size_x, grid_size_y), dtype=bool)
+        for _, param in self.planets.items():
+            cx, cy = param.center
+            radius = param.radius + self.sg.l / 2
+            self._mark_obstacle_in_grid(grid, cx, cy, radius, grid_resolution, x_min, y_min)
+
+        for name, param in self.satellites.items():
+            planet_name = name.split("/")[0]
+            planet_center = self.planets[planet_name].center
+            cx, cy = planet_center + param.orbit_r * np.array([np.cos(param.tau), np.sin(param.tau)])
+            radius = param.radius + self.sg.l / 2
+            self._mark_obstacle_in_grid(grid, cx, cy, radius, grid_resolution, x_min, y_min)
+
+        # A* search
+        start = self._to_grid_coords(self.init_state.x, self.init_state.y, grid_resolution, x_min, y_min)
+        goal = self._to_grid_coords(self.goal_state.x, self.goal_state.y, grid_resolution, x_min, y_min)
+        path = self._astar(grid, start, goal)
+
+        # Convert path back to continuous domain
+        if not path:
+            raise RuntimeError("A* could not find a feasible path.")
+
+        waypoints = [self._to_continuous_coords(p[0], p[1], grid_resolution, x_min, y_min) for p in path]
+        waypoints = np.array(waypoints).T  # Convert to (2, n) format
+
+        # Interpolate to SCvx timesteps
+        X = np.zeros((self.spaceship.n_x, self.params.K))
+        U = np.zeros((self.spaceship.n_u, self.params.K))
+        p = np.ones((self.spaceship.n_p))
+
+        t = np.linspace(0, 1, len(waypoints[0]))
+        for i in range(X.shape[1]):
+            X[0, i] = np.interp(i / (X.shape[1] - 1), t, waypoints[0])
+            X[1, i] = np.interp(i / (X.shape[1] - 1), t, waypoints[1])
+
+        X[7, :] = self.init_state.m  # Assume constant mass
+        p[0] = 10.0  # Initial guess for total time
+
+        return X, U, p
+
+    def _to_grid_coords(self, x, y, resolution, x_min, y_min):
+        """
+        Convert continuous coordinates to grid indices, considering bounds.
+        """
+        return int((x - x_min) / resolution), int((y - y_min) / resolution)
+
+    def _mark_obstacle_in_grid(self, grid, cx, cy, radius, resolution, x_min, y_min):
+        """
+        Mark cells in the grid as occupied for a circular obstacle, considering bounds.
+        """
+        cx_idx, cy_idx = self._to_grid_coords(cx, cy, resolution, x_min, y_min)
+
+        radius_cells = int(radius / resolution)
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+                x = cx_idx + dx
+                y = cy_idx + dy
+                if 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]:
+                    if np.sqrt(dx**2 + dy**2) * resolution <= radius:
+                        grid[x, y] = True
+
+    def _to_continuous_coords(self, x_idx, y_idx, resolution, x_min, y_min):
+        """
+        Convert grid indices to continuous coordinates, considering bounds.
+        """
+        return x_min + x_idx * resolution, y_min + y_idx * resolution
+
+    def _astar(self, grid, start, goal):
+        """
+        A* algorithm for pathfinding on a 2D grid.
+
+        Parameters:
+        - grid: 2D numpy array where True/1 represents obstacles, False/0 represents passable cells
+        - start: tuple (x, y) of start coordinates
+        - goal: tuple (x, y) of goal coordinates
+
+        Returns:
+        - Path from start to goal, or None if no path exists
+        """
+
+        def heuristic(a, b):
+            # Euclidean distance heuristic
+            return np.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
+
+        def is_valid_cell(cell):
+            # Check if cell is within grid and not an obstacle
+            x, y = cell
+            return 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1] and grid[x, y] == 0  # Assuming 0 means passable
+
+        # Open set as a priority queue
+        open_set = []
+        heapq.heappush(open_set, (0, start))
+
+        # Dictionaries to track path and scores
+        came_from = {}
+        g_score = {start: 0}
+        f_score = {start: heuristic(start, goal)}
+
+        # Possible movement directions (4-connectivity)
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+        while open_set:
+            current_f, current = heapq.heappop(open_set)
+
+            # Goal check
+            if current == goal:
+                path = []
+                while current in came_from:
+                    path.append(current)
+                    current = came_from[current]
+                path.append(start)
+                return path[::-1]  # Reverse path
+
+            # Check neighbors
+            for dx, dy in directions:
+                neighbor = (current[0] + dx, current[1] + dy)
+
+                # Validate neighbor
+                if not is_valid_cell(neighbor):
+                    continue
+
+                # Calculate tentative g score
+                tentative_g_score = g_score[current] + 1
+
+                # Update if this path is better
+                if neighbor not in g_score or tentative_g_score < g_score.get(neighbor, float("inf")):
+
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+
+                    # Add to open set if not already present
+                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
+
+        return None  # No path found
+
+    def plot_trajectory(self, X, title="Trajectory Visualization", save_path=None):
+        """
+        Plot the trajectory, planets, and world bounds, and optionally save the plot to a file.
+
+        Parameters:
+        - X: numpy array, trajectory states (shape: n_x x K)
+        - title: string, title of the plot
+        - save_path: string or None, if specified, saves the plot to this path
+        """
+        # Extract trajectory data
+        x_traj = X[0, :]
+        y_traj = X[1, :]
+
+        # Extract bounds
+        x_min = self.bounds[0] + self.sg.l / 2
+        y_min = self.bounds[1] + self.sg.l / 2
+        x_max = self.bounds[2] - self.sg.l / 2
+        y_max = self.bounds[3] - self.sg.l / 2
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+
+        # Plot world bounds
+        rect = patches.Rectangle(
+            (x_min, y_min),
+            x_max - x_min,
+            y_max - y_min,
+            linewidth=1,
+            edgecolor="black",
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+        # Plot planets
+        for name, param in self.planets.items():
+            planet = patches.Circle(
+                param.center,
+                param.radius,
+                color="blue",
+                alpha=0.5,
+            )
+            ax.add_patch(planet)
+
+        for name, param in self.satellites.items():
+            planet_name = name.split("/")[0]
+            planet_center = self.planets[planet_name].center
+            center = planet_center + param.orbit_r * np.array([np.cos(param.tau), np.sin(param.tau)])
+            radius = param.radius
+            satellite = patches.Circle(
+                center,
+                radius,
+                color="red",
+                alpha=0.5,
+            )
+            ax.add_patch(satellite)
+
+        # Plot trajectory
+        ax.plot(
+            x_traj,
+            y_traj,
+            "-o",
+            color="red",
+            markersize=4,
+            label="Trajectory",
+        )
+
+        # Add labels and legend
+        ax.set_xlabel("X-coordinate")
+        ax.set_ylabel("Y-coordinate")
+        ax.set_title(title)
+        ax.legend()
+
+        plt.grid()
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Create the full save path
+        save_path = os.path.join(script_dir, "gigi")
+
+        plt.savefig(save_path, dpi=300)
+        print(f"Plot saved to {save_path}")
+
+        # Show the plot
+        plt.show()
