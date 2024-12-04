@@ -145,6 +145,12 @@ class SpaceshipPlanner:
             init_state.m,
         )
 
+        self.dock_points = dock_points
+        if dock_points is not None:
+            offset_goal = dock_points[0]
+            self.goal_state.x = offset_goal[0]
+            self.goal_state.y = offset_goal[1]
+
         print("Start: ", self.init_state)
         print("Goal: ", self.goal_state)
 
@@ -152,7 +158,7 @@ class SpaceshipPlanner:
         self.kappa_ref = {name: np.zeros(self.params.K) for name in self.satellites}
 
         # set reference trajectory X_bar, U_bar, p_bar
-        self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        self.X_bar, self.U_bar, self.p_bar = self.initial_guess_astar()
         # self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
 
         while self.iteration < self.params.max_iterations:
@@ -660,8 +666,8 @@ class SpaceshipPlanner:
 
         total_dist = sum([np.linalg.norm(X[0:2, k + 1] - X[0:2, k], 2) for k in range(self.params.K - 1)])
         avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
-        min_time = np.sqrt(2 * total_dist / avg_acc)
-        p[0] = 2 * min_time  # Initial guess for total time
+        self.min_time = np.sqrt(2 * total_dist / avg_acc)
+        p[0] = 2 * self.min_time  # Initial guess for total time
 
         # print("Astar: ", total_dist, min_time)
 

@@ -55,7 +55,7 @@ class Visualizer:
             # ax.add_patch(planet)
 
         if dock_points is not None:
-            A, B, C, A1, A2, p = dock_points
+            A, B, C, A1, A2, pho = dock_points
             ax.scatter(A[0], A[1], s=1024, marker="x")
             ax.scatter(X[0, -1], X[1, -1], s=1024, c="r")
             ax.scatter(B[0], B[1], s=1024, marker="*")
