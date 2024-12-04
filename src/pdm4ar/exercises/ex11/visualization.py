@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 
 
@@ -14,6 +15,22 @@ class Visualizer:
         self.global_fig, self.global_ax = plt.subplots(figsize=(36, 25), dpi=120)
         self.global_ax.set_xlim([self.bounds[0], self.bounds[2]])
         self.global_ax.set_ylim([self.bounds[1], self.bounds[3]])
+        self.global_ax.add_patch(
+            Rectangle(
+                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
+                self.bounds[2] - self.bounds[0] - self.r_s,
+                self.bounds[3] - self.bounds[1] - self.r_s,
+                fill=False,
+            )
+        )
+        self.global_ax.add_patch(
+            Rectangle(
+                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
+                self.bounds[2] - self.bounds[0] - self.r_s,
+                self.bounds[3] - self.bounds[1] - self.r_s,
+                fill=False,
+            )
+        )
         for name, planet in self.planets.items():
             planet = plt.Circle(planet.center, planet.radius, color="green")
             self.global_ax.add_patch(planet)
@@ -22,6 +39,14 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
         ax.set_xlim([self.bounds[0], self.bounds[2]])
         ax.set_ylim([self.bounds[1], self.bounds[3]])
+        ax.add_patch(
+            Rectangle(
+                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
+                self.bounds[2] - self.bounds[0] - self.r_s,
+                self.bounds[3] - self.bounds[1] - self.r_s,
+                fill=False,
+            )
+        )
         for name, planet in self.planets.items():
             planet = plt.Circle(planet.center, planet.radius, color="green")
             ax.add_patch(planet)

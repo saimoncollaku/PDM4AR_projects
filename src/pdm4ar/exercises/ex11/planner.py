@@ -44,8 +44,8 @@ class SolverParameters:
     rho_0: float = 0.0  # trust region 0
     rho_1: float = 0.25  # trust region 1
     rho_2: float = 0.7  # trust region 2
-    alpha: float = 3  # div factor trust region update
-    beta: float = 2  # mult factor trust region update
+    alpha: float = 2.5  # div factor trust region update
+    beta: float = 3.2  # mult factor trust region update
 
     # Discretization constants
     K: int = 50  # number of discretization steps
@@ -145,7 +145,8 @@ class SpaceshipPlanner:
             init_state.m,
         )
 
-        print(self.init_state, self.goal_state)
+        print("Start: ", self.init_state)
+        print("Goal: ", self.goal_state)
 
         self.problem_parameters["eta"].value = self.params.tr_radius
         self.kappa_ref = {name: np.zeros(self.params.K) for name in self.satellites}
@@ -230,7 +231,23 @@ class SpaceshipPlanner:
         X[2, :] = np.linspace(self.init_state.psi, self.goal_state.psi, K)
         X[7, :] = self.init_state.m
         U[:] = 0
-        p[0] = 10.0
+        # p[0] = 10.0
+
+        total_dist = np.sqrt(
+            (self.init_state.x - self.goal_state.x) ** 2 + (self.init_state.y - self.goal_state.y) ** 2
+        )
+        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
+        min_time = np.sqrt(2 * total_dist / avg_acc)
+        # print(min)
+        # print("Naive: ", total_dist, min_time)
+
+        # min_time, opt_time for public TCs
+        # 7.13, 17.05
+        # 6.73, 13.76
+        # 8.35, 14.25
+        # 8.35, 17.56
+
+        p[0] = 2 * min_time
 
         # print(X.shape, U.shape, p.shape)
         # assert X.shape == (self.spaceship.n_x, K)
@@ -319,16 +336,16 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(control_constraints)
             # docking_constraints = [
-            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][0, -2] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][1, -2] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][2, -2] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            cvx.norm2(self.variables["X"][3, -2] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
+            # cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
+            # cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
+            # cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
+            # cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
+            # cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
+            # cvx.norm2(self.variables["X"][0, -2] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
+            # cvx.norm2(self.variables["X"][1, -2] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
+            # cvx.norm2(self.variables["X"][2, -2] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
+            # cvx.norm2(self.variables["X"][3, -2] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
+            # cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
         ]
         # constraints.extend(docking_constraints)
 
@@ -385,7 +402,7 @@ class SpaceshipPlanner:
                 Δr = pt - planet.center
                 δr = self.variables["X"][0:2, k] - pt
                 ξ = cvx.norm2(H * Δr)
-                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
+                ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-6)
                 obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
                 constraints.append(obs_constraint)
 
@@ -591,10 +608,10 @@ class SpaceshipPlanner:
         Generate an initial guess for SCvx using the A* algorithm.
         """
         # Extract world bounds from self.bounds
-        x_min = self.bounds[0] + self.sg.l / 2
-        y_min = self.bounds[1] + self.sg.l / 2
-        x_max = self.bounds[2] - self.sg.l / 2
-        y_max = self.bounds[3] - self.sg.l / 2
+        x_min = self.bounds[0] + self.sg.width / 2
+        y_min = self.bounds[1] + self.sg.width / 2
+        x_max = self.bounds[2] - self.sg.width / 2
+        y_max = self.bounds[3] - self.sg.width / 2
         grid_resolution = 0.1  # Size of each grid cell
         grid_size_x = int((x_max - x_min) / grid_resolution)
         grid_size_y = int((y_max - y_min) / grid_resolution)
@@ -636,7 +653,13 @@ class SpaceshipPlanner:
             X[1, i] = np.interp(i / (X.shape[1] - 1), t, waypoints[1])
 
         X[7, :] = self.init_state.m  # Assume constant mass
-        p[0] = 10.0  # Initial guess for total time
+
+        total_dist = sum([np.linalg.norm(X[0:2, k + 1] - X[0:2, k], 2) for k in range(self.params.K - 1)])
+        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
+        min_time = np.sqrt(2 * total_dist / avg_acc)
+        p[0] = 2 * min_time  # Initial guess for total time
+
+        # print("Astar: ", total_dist, min_time)
 
         return X, U, p
 
@@ -750,10 +773,10 @@ class SpaceshipPlanner:
         y_traj = X[1, :]
 
         # Extract bounds
-        x_min = self.bounds[0] + self.sg.l / 2
-        y_min = self.bounds[1] + self.sg.l / 2
-        x_max = self.bounds[2] - self.sg.l / 2
-        y_max = self.bounds[3] - self.sg.l / 2
+        x_min = self.bounds[0]
+        y_min = self.bounds[1]
+        x_max = self.bounds[2]
+        y_max = self.bounds[3]
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -812,10 +835,11 @@ class SpaceshipPlanner:
 
         plt.grid()
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # script_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Create the full save path
-        save_path = os.path.join(script_dir, "gigi")
+        # save_path = os.path.join(script_dir, "gigi")
+        save_path = "../../out/11/astar_guess_" + str(round(x_traj[-1], 2)) + ".png"
 
         plt.savefig(save_path, dpi=300)
         print(f"Plot saved to {save_path}")
