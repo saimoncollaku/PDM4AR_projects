@@ -19,6 +19,11 @@ from pdm4ar.exercises_def.ex11.utils_config import sim_context_from_yaml
 def ex11_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[float, Report]:
     r = Report("Final24-" + sim_context.description)
     # run simulation
+    with open(f"../../out/11/results.txt", "a") as f:
+        for player_name, player in sim_context.players.items():
+            if sim_context.missions.get(player_name) is not None:
+                f.write(player_name + ": " + str(sim_context.missions.get(player_name)))
+        f.write("\n")
     run_simulation(sim_context)
     # visualisation
     report = _ex11_vis(sim_context=sim_context)
@@ -28,6 +33,11 @@ def ex11_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[float, Report
     score: float = avg_player_metrics.reduce_to_score()
     r.text(f"EpisodeEvaluation:", pprint.pformat(avg_player_metrics))
     score_str = f"{score:.2f}"
+    with open(f"../../out/11/results.txt", "a") as f:
+        f.write(avg_player_metrics.__repr__())
+        f.write("\n")
+        f.write("Score: " + score_str)
+        f.write("\n")
     r.text("OverallScore: ", score_str)
     r.add_child(report)
     return score, r
@@ -66,12 +76,14 @@ def get_exercise11():
         "config_planet.yaml",
         "config_satellites.yaml",
         "config_satellites_diff.yaml",
-        # "config_satellites_crash.yaml",
+        "config_satellites_crash.yaml",
         # "config_satellites_hard.yaml",
         # "config_satellites_extreme_fail.yaml",
         # "config_satellites_extreme_easy.yaml",
     ]
 
+    open(f"../../out/11/old_results.txt", "w+").write(open(f"../../out/11/results.txt", "r").read())
+    open(f"../../out/11/results.txt", "w+").close()
     test_values: List[SimContext] = []
     for c in configs:
         config_file = config_dir / c

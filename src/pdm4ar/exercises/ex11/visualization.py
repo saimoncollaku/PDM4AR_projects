@@ -1,13 +1,14 @@
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
+import os
 
 
 class Visualizer:
 
-    def __init__(self, bounds, r_s, planets, satellites, params):
+    def __init__(self, bounds, sp, planets, satellites, params):
         self.bounds = bounds
-        self.r_s = r_s
+        self.sg = sp
         self.planets = planets
         self.satellites = satellites
         self.params = params
@@ -17,17 +18,17 @@ class Visualizer:
         self.global_ax.set_ylim([self.bounds[1], self.bounds[3]])
         self.global_ax.add_patch(
             Rectangle(
-                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
-                self.bounds[2] - self.bounds[0] - self.r_s,
-                self.bounds[3] - self.bounds[1] - self.r_s,
+                (self.bounds[0] + self.sg.l / 2, self.bounds[1] + self.sg.l / 2),
+                self.bounds[2] - self.bounds[0] - self.sg.l,
+                self.bounds[3] - self.bounds[1] - self.sg.l,
                 fill=False,
             )
         )
         self.global_ax.add_patch(
             Rectangle(
-                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
-                self.bounds[2] - self.bounds[0] - self.r_s,
-                self.bounds[3] - self.bounds[1] - self.r_s,
+                (self.bounds[0] + self.sg.width / 2, self.bounds[1] + self.sg.width / 2),
+                self.bounds[2] - self.bounds[0] - self.sg.width,
+                self.bounds[3] - self.bounds[1] - self.sg.width,
                 fill=False,
             )
         )
@@ -35,23 +36,32 @@ class Visualizer:
             planet = plt.Circle(planet.center, planet.radius, color="green")
             self.global_ax.add_patch(planet)
 
-    def vis_iter(self, iteration, X, p, kappa_sats):
+    def vis_iter(self, iteration, X, U, p, kappa_sats, dock_points):
         fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
         ax.set_xlim([self.bounds[0], self.bounds[2]])
         ax.set_ylim([self.bounds[1], self.bounds[3]])
         ax.add_patch(
             Rectangle(
-                (self.bounds[0] + self.r_s / 2, self.bounds[1] + self.r_s / 2),
-                self.bounds[2] - self.bounds[0] - self.r_s,
-                self.bounds[3] - self.bounds[1] - self.r_s,
+                (self.bounds[0] + self.sg.l / 2, self.bounds[1] + self.sg.l / 2),
+                self.bounds[2] - self.bounds[0] - self.sg.l,
+                self.bounds[3] - self.bounds[1] - self.sg.l,
                 fill=False,
             )
         )
         for name, planet in self.planets.items():
             planet = plt.Circle(planet.center, planet.radius, color="green")
             ax.add_patch(planet)
-            # planet = plt.Circle(planet.center, planet.radius + self.r_s, color="red", alpha=0.2)
+            # planet = plt.Circle(planet.center, planet.radius + self.sg.l, color="red", alpha=0.2)
             # ax.add_patch(planet)
+
+        if dock_points is not None:
+            A, B, C, A1, A2, p = dock_points
+            ax.scatter(A[0], A[1], s=1024, marker="x")
+            ax.scatter(X[0, -1], X[1, -1], s=1024, c="r")
+            ax.scatter(B[0], B[1], s=1024, marker="*")
+            ax.scatter(C[0], C[1], s=1024, marker="*")
+            ax.scatter(A1[0], A1[1], s=1024, marker="^")
+            ax.scatter(A2[0], A2[1], s=1024, marker="^")
 
         for name, satellite in self.satellites.items():
             planet_name = name.split("/")[0]
@@ -68,7 +78,7 @@ class Visualizer:
                 ax.add_patch(satellite_k)
                 satellite_coll = plt.Circle(
                     satellite_center,
-                    satellite.radius + self.r_s - kappa_sats[name][k],
+                    satellite.radius + self.sg.l - kappa_sats[name][k],
                     color=plt.cm.viridis(k / self.params.K),
                     alpha=alpha,
                     fill=False,
@@ -87,6 +97,24 @@ class Visualizer:
             X[0, :],
             X[1, :],
         )
+        for k in range(self.params.K):
+            ax.arrow(
+                X[0, k] - self.sg.l_r * np.cos(X[2, k]),
+                X[1, k] - self.sg.l_r * np.sin(X[2, k]),
+                self.sg.l * np.cos(X[2, k]),
+                self.sg.l * np.sin(X[2, k]),
+                width=0.05,
+                length_includes_head=True,
+            )
+            ax.arrow(
+                X[0, k] - self.sg.l_r * np.cos(X[2, k]),
+                X[1, k] - self.sg.l_r * np.sin(X[2, k]),
+                U[0, k] * np.cos(U[1, k] + X[2, k]) / 2,
+                U[0, k] * np.sin(U[1, k] + X[2, k]) / 2,
+                width=0.03,
+                color="r",
+                length_includes_head=True,
+            )
         ax.scatter(
             X[0, :],
             X[1, :],
@@ -98,16 +126,45 @@ class Visualizer:
             X[0, :],
             X[1, :],
             linewidth=4,
-            alpha=iteration / self.params.max_iterations,
+            alpha=min(4 * iteration / self.params.max_iterations, 1),
         )
+        for k in range(self.params.K):
+            self.global_ax.arrow(
+                X[0, k] - self.sg.l_r * np.cos(X[2, k]),
+                X[1, k] - self.sg.l_r * np.sin(X[2, k]),
+                self.sg.l * np.cos(X[2, k]),
+                self.sg.l * np.sin(X[2, k]),
+                width=0.05,
+                length_includes_head=True,
+                alpha=min(4 * iteration / self.params.max_iterations, 1),
+            )
+            self.global_ax.arrow(
+                X[0, k] - self.sg.l_r * np.cos(X[2, k]),
+                X[1, k] - self.sg.l_r * np.sin(X[2, k]),
+                U[0, k] * np.cos(U[1, k] + X[2, k]) / 2,
+                U[0, k] * np.sin(U[1, k] + X[2, k]) / 2,
+                width=0.03,
+                color="r",
+                length_includes_head=True,
+                alpha=min(4 * iteration / self.params.max_iterations, 1),
+            )
 
         for k in range(self.params.K):
-            block = plt.Circle(X[0:2, k], self.r_s, alpha=0.1, color="grey")
+            block = plt.Circle(X[0:2, k], self.sg.l, alpha=0.1, color="grey")
             ax.add_patch(block)
 
-        fig.savefig("../../out/11/vis_" + str(iteration) + ".png", bbox_inches="tight")
+        savedir = "../../out/11/" + str(len(self.satellites)) + "_" + str(round(X[0, -1], 2))
+        if not os.path.exists(savedir):
+            os.mkdir(savedir)
+        fig.savefig(
+            savedir + "/vis_" + str(iteration) + ".png",
+            bbox_inches="tight",
+        )
         plt.close(fig)
-        self.global_fig.savefig("../../out/11/vis_glob.png", bbox_inches="tight")
+        self.global_fig.savefig(
+            savedir + "/vis_glob.png",
+            bbox_inches="tight",
+        )
 
     def vis_k(self, iteration, X, p, kappa_sats):
         for k in range(self.params.K):
@@ -117,7 +174,7 @@ class Visualizer:
             for name, planet in self.planets.items():
                 planet = plt.Circle(planet.center, planet.radius, color="green")
                 ax.add_patch(planet)
-                planet = plt.Circle(planet.center, planet.radius + self.r_s, color="red", alpha=0.2)
+                planet = plt.Circle(planet.center, planet.radius + self.sg.l, color="red", alpha=0.2)
                 ax.add_patch(planet)
             for name, satellite in self.satellites.items():
                 planet_name = name.split("/")[0]
@@ -128,7 +185,7 @@ class Visualizer:
                 satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
                 ax.add_patch(satellite_k)
                 satellite_k = plt.Circle(
-                    satellite_center, satellite.radius + self.r_s - kappa_sats[name][k], color="red", alpha=0.2
+                    satellite_center, satellite.radius + self.sg.l - kappa_sats[name][k], color="red", alpha=0.2
                 )
                 ax.add_patch(satellite_k)
             if k < self.params.K - 1:
@@ -146,15 +203,21 @@ class Visualizer:
                     markersize=16,
                 )
 
-                block = plt.Circle(X[0:2, k], self.r_s, alpha=0.2, color="blue")
+                block = plt.Circle(X[0:2, k], self.sg.l, alpha=0.2, color="blue")
                 ax.add_patch(block)
                 block = plt.Circle(
                     X[0:2, k + 1],
-                    self.r_s,
+                    self.sg.l,
                     alpha=0.2,
                     color="blue",
                 )
                 ax.add_patch(block)
 
-                fig.savefig("../../out/11/vis_k/vis_" + str(iteration) + "_" + str(k) + ".png", bbox_inches="tight")
+                savedir = "../../out/11/" + str(len(self.satellites)) + "_" + str(round(X[0, -1], 2)) + "/vis_k"
+                if not os.path.exists(savedir):
+                    os.mkdir(savedir)
+                fig.savefig(
+                    savedir + "/vis_" + str(iteration) + "_" + str(k) + ".png",
+                    bbox_inches="tight",
+                )
                 plt.close(fig)

@@ -104,7 +104,11 @@ class SpaceshipAgent(Agent):
 
         # self.planner.set_initial_reference(self.init_state, self.final_state)
 
-        self.cmds_plan, self.state_traj = self.planner.compute_trajectory(self.init_state, self.goal_state)
+        dock_points = None
+        if isinstance(init_sim_obs.goal, DockingTarget):
+            dock_points = init_sim_obs.goal.get_landing_constraint_points_fix()
+
+        self.cmds_plan, self.state_traj = self.planner.compute_trajectory(self.init_state, self.goal_state, dock_points)
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """

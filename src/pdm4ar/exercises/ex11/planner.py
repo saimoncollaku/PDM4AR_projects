@@ -122,13 +122,13 @@ class SpaceshipPlanner:
 
         self.verbose = True
         self.iteration = 0
-        self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
+        self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
         self.visualize = True
         self.vis_per_iters = 5
         self.vis_iter = -1
 
     def compute_trajectory(
-        self, init_state: SpaceshipState, goal_state: DynObstacleState
+        self, init_state: SpaceshipState, goal_state: DynObstacleState, dock_points
     ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState]]:
         """
         Compute a trajectory from init_state to goal_state.
@@ -196,8 +196,10 @@ class SpaceshipPlanner:
                 self.visualizer.vis_iter(
                     self.iteration,
                     self.variables["X"].value,
+                    self.variables["U"].value,
                     self.variables["p"].value,
                     {name: self.variables["kappa_" + str(name)].value for name in self.satellites},
+                    dock_points,
                 )
 
             self._update_trust_region()
@@ -237,8 +239,7 @@ class SpaceshipPlanner:
             (self.init_state.x - self.goal_state.x) ** 2 + (self.init_state.y - self.goal_state.y) ** 2
         )
         avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
-        min_time = np.sqrt(2 * total_dist / avg_acc)
-        # print(min)
+        self.min_time = np.sqrt(2 * total_dist / avg_acc)
         # print("Naive: ", total_dist, min_time)
 
         # min_time, opt_time for public TCs
@@ -247,7 +248,7 @@ class SpaceshipPlanner:
         # 8.35, 14.25
         # 8.35, 17.56
 
-        p[0] = 2 * min_time
+        p[0] = 2 * self.min_time
 
         # print(X.shape, U.shape, p.shape)
         # assert X.shape == (self.spaceship.n_x, K)
@@ -270,7 +271,7 @@ class SpaceshipPlanner:
         variables = {
             "X": cvx.Variable((self.spaceship.n_x, self.params.K)),
             "U": cvx.Variable((self.spaceship.n_u, self.params.K)),
-            "p": cvx.Variable(self.spaceship.n_p),
+            "p": cvx.Variable(self.spaceship.n_p, nonneg=True),
             "nu_dyn": cvx.Variable((self.spaceship.n_x, self.params.K - 1)),
         }
 
@@ -312,7 +313,7 @@ class SpaceshipPlanner:
         """
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
-            self.variables["p"] >= 0,
+            # self.variables["p"] >= 0,
             self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
             # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
@@ -418,7 +419,7 @@ class SpaceshipPlanner:
                 Δr = self.problem_parameters["X_ref"][0:2, k] - satellite_center
                 δr = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
                 ξ = cvx.norm2(Δr)
-                ζ = Δr / (cvx.norm2(Δr) + 1e-5)
+                ζ = Δr / (cvx.norm2(Δr) + 1e-6)
                 δθ = np.array([-np.sin(θ), np.cos(θ)])
                 δp = self.variables["p"] - self.problem_parameters["p_ref"]
                 γ = satellite.orbit_r * satellite.omega * δp * t
@@ -445,7 +446,10 @@ class SpaceshipPlanner:
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
-        # objective += cvx.sum_squares(self.variables["U"]) * 0.8
+        objective += 50.0 * cvx.sum(cvx.abs(self.variables["U"][:, 0])) / (2 * self.min_time)
+        objective += 10.0 * sum(
+            [cvx.norm2(self.variables["X"][0:2, k + 1] - self.variables["X"][0:2, k]) for k in range(self.params.K - 1)]
+        )
 
         return cvx.Minimize(objective)
 
@@ -486,7 +490,7 @@ class SpaceshipPlanner:
                 )
             )
 
-        return actual_cost - linearized_cost < self.params.stop_crit
+        return actual_cost < self.params.stop_crit and actual_cost - linearized_cost < self.params.stop_crit
 
     def _update_trust_region(self):
         """
