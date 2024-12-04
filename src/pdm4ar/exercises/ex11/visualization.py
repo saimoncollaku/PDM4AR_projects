@@ -18,15 +18,15 @@ class Visualizer:
             planet = plt.Circle(planet.center, planet.radius, color="green")
             self.global_ax.add_patch(planet)
 
-    def vis_iter(self, iteration, X, p):
+    def vis_iter(self, iteration, X, p, kappa_sats):
         fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
         ax.set_xlim([self.bounds[0], self.bounds[2]])
         ax.set_ylim([self.bounds[1], self.bounds[3]])
         for name, planet in self.planets.items():
             planet = plt.Circle(planet.center, planet.radius, color="green")
             ax.add_patch(planet)
-            planet = plt.Circle(planet.center, planet.radius + self.r_s, color="red", alpha=0.2)
-            ax.add_patch(planet)
+            # planet = plt.Circle(planet.center, planet.radius + self.r_s, color="red", alpha=0.2)
+            # ax.add_patch(planet)
 
         for name, satellite in self.satellites.items():
             planet_name = name.split("/")[0]
@@ -41,6 +41,14 @@ class Visualizer:
                     satellite_center, satellite.radius, color=plt.cm.viridis(k / self.params.K), alpha=alpha
                 )
                 ax.add_patch(satellite_k)
+                satellite_coll = plt.Circle(
+                    satellite_center,
+                    satellite.radius + self.r_s - kappa_sats[name][k],
+                    color=plt.cm.viridis(k / self.params.K),
+                    alpha=alpha,
+                    fill=False,
+                )
+                ax.add_patch(satellite_coll)
                 satellite_k_glob = plt.Circle(
                     satellite_center,
                     satellite.radius,
@@ -76,7 +84,7 @@ class Visualizer:
         plt.close(fig)
         self.global_fig.savefig("../../out/11/vis_glob.png", bbox_inches="tight")
 
-    def vis_k(self, iteration, X, p):
+    def vis_k(self, iteration, X, p, kappa_sats):
         for k in range(self.params.K):
             fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
             ax.set_xlim([self.bounds[0], self.bounds[2]])
@@ -94,7 +102,9 @@ class Visualizer:
                 satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
                 satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
                 ax.add_patch(satellite_k)
-                satellite_k = plt.Circle(satellite_center, satellite.radius + self.r_s, color="red", alpha=0.2)
+                satellite_k = plt.Circle(
+                    satellite_center, satellite.radius + self.r_s - kappa_sats[name][k], color="red", alpha=0.2
+                )
                 ax.add_patch(satellite_k)
             if k < self.params.K - 1:
                 ax.plot(

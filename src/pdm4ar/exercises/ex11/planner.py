@@ -16,7 +16,6 @@ import os
 import heapq
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from numpy import False_
 
 from pdm4ar.exercises.ex11.discretization import *
 from pdm4ar.exercises.ex11.visualization import Visualizer
@@ -121,11 +120,11 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        self.verbose = False
+        self.verbose = True
         self.iteration = 0
-        # self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
-        self.visualize = False
-        self.vis_per_iters = 10
+        self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
+        self.visualize = True
+        self.vis_per_iters = 5
         self.vis_iter = -1
 
     def compute_trajectory(
@@ -149,6 +148,7 @@ class SpaceshipPlanner:
         print(self.init_state, self.goal_state)
 
         self.problem_parameters["eta"].value = self.params.tr_radius
+        self.kappa_ref = {name: np.zeros(self.params.K) for name in self.satellites}
 
         # set reference trajectory X_bar, U_bar, p_bar
         self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
@@ -191,12 +191,13 @@ class SpaceshipPlanner:
                         print(name, self.variables["nu_" + str(name)].value.round(6))
                 break
 
-            # if self.visualize and self.iteration % self.vis_per_iters == 0:
-            #     self.visualizer.vis_iter(
-            #         self.iteration,
-            #         self.variables["X"].value,
-            #         self.variables["p"].value,
-            #     )
+            if self.visualize and self.iteration % self.vis_per_iters == 0:
+                self.visualizer.vis_iter(
+                    self.iteration,
+                    self.variables["X"].value,
+                    self.variables["p"].value,
+                    {name: self.variables["kappa_" + str(name)].value for name in self.satellites},
+                )
 
             self._update_trust_region()
             self.iteration += 1
@@ -260,7 +261,6 @@ class SpaceshipPlanner:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
         for name in self.satellites:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
-        for name in self.satellites:
             variables["kappa_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
         return variables
@@ -409,10 +409,13 @@ class SpaceshipPlanner:
                 obs_constraint = ξ + ζ @ δf >= r - self.variables["nu_" + str(name)][k]
                 constraints.append(obs_constraint)
 
-        # if self.visualize and self.iteration == self.vis_iter:
-        #     self.visualizer.vis_k(
-        #         self.vis_iter, self.problem_parameters["X_ref"].value, self.problem_parameters["p_ref"].value
-        #     )
+        if self.visualize and self.iteration == self.vis_iter:
+            self.visualizer.vis_k(
+                self.vis_iter,
+                self.problem_parameters["X_ref"].value,
+                self.problem_parameters["p_ref"].value,
+                self.kappa_ref,
+            )
 
         return constraints
 
@@ -491,6 +494,8 @@ class SpaceshipPlanner:
             self.X_bar = self.variables["X"].value
             self.U_bar = self.variables["U"].value
             self.p_bar = self.variables["p"].value
+
+        self.kappa_ref = {name: self.variables["kappa_" + str(name)] for name in self.satellites}
 
         new_eta = self.problem_parameters["eta"].value
         if rho < self.params.rho_0:
