@@ -41,15 +41,15 @@ class SolverParameters:
     tr_radius: float = 5  # initial trust region radius
     min_tr_radius: float = 1e-4  # min trust region radius
     max_tr_radius: float = 100  # max trust region radius
-    rho_0: float = 0.3  # trust region 0
-    rho_1: float = 0.5  # trust region 1
+    rho_0: float = 0.0  # trust region 0
+    rho_1: float = 0.25  # trust region 1
     rho_2: float = 0.7  # trust region 2
     alpha: float = 3  # div factor trust region update
     beta: float = 2  # mult factor trust region update
 
     # Discretization constants
     K: int = 50  # number of discretization steps
-    N_sub: int = 6  # used inside ode solver inside discretization
+    N_sub: int = 5  # used inside ode solver inside discretization
     stop_crit: float = 1e-5  # Stopping criteria constant
 
 
@@ -297,13 +297,13 @@ class SpaceshipPlanner:
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
             self.variables["p"] >= 0,
             self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
-            self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
+            # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
             # boundary_constraints = [
-            self.variables["X"][0, :] >= self.bounds[0] + self.sg.l / 2,
-            self.variables["X"][1, :] >= self.bounds[1] + self.sg.l / 2,
-            self.variables["X"][0, :] <= self.bounds[2] - self.sg.l / 2,
-            self.variables["X"][1, :] <= self.bounds[3] - self.sg.l / 2,
+            self.variables["X"][0, :] >= self.bounds[0],
+            self.variables["X"][1, :] >= self.bounds[1],
+            self.variables["X"][0, :] <= self.bounds[2],
+            self.variables["X"][1, :] <= self.bounds[3],
             self.variables["X"][6, :] >= self.spaceship.sp.delta_limits[0],
             self.variables["X"][6, :] <= self.spaceship.sp.delta_limits[1],
             self.variables["X"][7, :] >= self.spaceship.sp.m_v,
@@ -355,7 +355,7 @@ class SpaceshipPlanner:
         for k in range(self.params.K - 1):
             reg_constraint = (
                 cvx.abs(self.variables["U"][1, k + 1] - self.variables["U"][1, k])
-                <= self.spaceship.sp.ddelta_limits[1] / 8
+                <= self.spaceship.sp.ddelta_limits[1] / 4
             )
             constraints.append(reg_constraint)
 
@@ -386,7 +386,7 @@ class SpaceshipPlanner:
                 δr = self.variables["X"][0:2, k] - pt
                 ξ = cvx.norm2(H * Δr)
                 ζ = H * H * Δr / (cvx.norm2(H * Δr) + 1e-5)
-                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)][k]
+                obs_constraint = ξ + ζ @ δr >= 1 - self.variables["nu_" + str(name)]
                 constraints.append(obs_constraint)
 
         for name, satellite in self.satellites.items():
@@ -428,7 +428,7 @@ class SpaceshipPlanner:
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
-        objective += cvx.sum_squares(self.variables["U"]) * 0.8
+        # objective += cvx.sum_squares(self.variables["U"]) * 0.8
 
         return cvx.Minimize(objective)
 
@@ -541,7 +541,8 @@ class SpaceshipPlanner:
             s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
             for k in range(self.params.K - 1):
-                dist = np.linalg.norm(X[0:2, k].T - param.center, 2)
+                midpt = 0.5 * X[0:2, k].T + 0.5 * X[0:2, k + 1].T
+                dist = np.linalg.norm(midpt - param.center, 2)
                 s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
 
         s = 0
