@@ -27,8 +27,8 @@ class MyAgentParams:
 
     end_tol: float = 0.3
     max_tol: float = 1.0
-    debug: bool = True
-    cache: bool = True
+    debug: bool = False
+    cache: bool = False
 
 
 class SpaceshipAgent(Agent):
