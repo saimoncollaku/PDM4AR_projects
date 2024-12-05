@@ -1,25 +1,27 @@
+import os
+import heapq
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Union, Sequence
 
 import cvxpy as cvx
 from dg_commons import PlayerName
 from dg_commons.seq import DgSampledSequence
 from dg_commons.sim.models.obstacles import StaticObstacle
-from dg_commons.sim.models.obstacles_dyn import DynObstacleState
+
+# from dg_commons.sim.models.obstacles_dyn import DynObstacleState
 from dg_commons.sim.models.spaceship import SpaceshipCommands, SpaceshipState
 from dg_commons.sim.models.spaceship_structures import (
     SpaceshipGeometry,
     SpaceshipParameters,
 )
 
-import os
-import heapq
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from numpy import False_
 
 from pdm4ar.exercises.ex11.discretization import *
 from pdm4ar.exercises.ex11.visualization import Visualizer
+from pdm4ar.exercises_def.ex11.goal import DockingTarget, SpaceshipTarget
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
 
 
@@ -65,6 +67,9 @@ class SpaceshipPlanner:
     sg: SpaceshipGeometry
     sp: SpaceshipParameters
     params: SolverParameters
+    init_state: SpaceshipState
+    goal_state: SpaceshipState
+    goal: SpaceshipTarget | DockingTarget
 
     # Simpy variables
     x: spy.Matrix
@@ -85,7 +90,7 @@ class SpaceshipPlanner:
         satellites: dict[PlayerName, SatelliteParams],
         sg: SpaceshipGeometry,
         sp: SpaceshipParameters,
-        bounds: Sequence[StaticObstacle],
+        bounds: Sequence[float],
         tolerances: Sequence[float],
     ):
         """
@@ -129,29 +134,44 @@ class SpaceshipPlanner:
         self.vis_iter = -1
 
     def compute_trajectory(
-        self, init_state: SpaceshipState, goal_state: DynObstacleState
-    ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState]]:
+        self,
+        init_state: SpaceshipState,
+        goal: SpaceshipTarget | DockingTarget,
+        init_time: float,
+        init_X: np.ndarray | None = None,
+        init_U: np.ndarray | None = None,
+        init_p: np.ndarray | None = None,
+    ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState], float]:
         """
-        Compute a trajectory from init_state to goal_state.
+        Compute a trajectory from init_state to goal_state
         """
         self.init_state = init_state
+        target = goal.target
+        self.iteration = 0
         self.goal_state = SpaceshipState(
-            goal_state.x,
-            goal_state.y,
-            goal_state.psi,
-            goal_state.vx,
-            goal_state.vy,
-            goal_state.dpsi,
+            target.x,
+            target.y,
+            target.psi,
+            target.vx,
+            target.vy,
+            target.dpsi,
             0,
             init_state.m,
         )
-
-        print(self.init_state, self.goal_state)
+        self.goal = goal
+        if self.verbose:
+            print("Planner received init and goal states:")
+            print(self.init_state, self.goal_state)
 
         self.problem_parameters["eta"].value = self.params.tr_radius
 
         # set reference trajectory X_bar, U_bar, p_bar
-        self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        if init_X is not None and init_U is not None and init_p is not None:
+            if self.verbose:
+                print("Picked up supplied init X, U, p values")
+            self.X_bar, self.U_bar, self.p_bar = init_X, init_U, init_p
+        else:
+            self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
         # self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
 
         while self.iteration < self.params.max_iterations:
@@ -165,8 +185,7 @@ class SpaceshipPlanner:
                 error = self.problem.solve(verbose=self.params.verbose_solver, solver=self.params.solver)
             except cvx.SolverError:
                 print(f"SolverError: {self.params.solver} failed to solve the problem.")
-            print(str(self.iteration) + ":  ", self.problem.status)
-            print("[t_f]: {}".format(round(self.variables["p"].value[0], 6)))
+            print(f"{self.iteration}: {self.problem.status} - [t_f]: {round(self.variables['p'].value[0], 6)}")
 
             if self.problem.status != "infeasible" and self._check_convergence(
                 self.variables["nu_dyn"].value,
@@ -174,10 +193,10 @@ class SpaceshipPlanner:
                 {name: self.variables["nu_" + name].value for name in self.satellites},
             ):
                 print("Converged in {} iterations..".format(self.iteration))
-                print(self.variables["p"].value.round(6))
-                print(self.variables["X"].value[0:2].round(6))
-                print(self.variables["U"].value.round(6))
                 if self.verbose:
+                    print(self.variables["p"].value.round(6))
+                    print(self.variables["X"].value[0:2].round(6))
+                    print(self.variables["U"].value.round(6))
                     print("[Slack violations]")
                     print(
                         "Dynamics: ",
@@ -203,7 +222,7 @@ class SpaceshipPlanner:
 
         # Example data: sequence from array
         timestamps = list(
-            np.linspace(0, self.variables["p"].value, self.params.K).reshape(
+            np.linspace(init_time, init_time + self.variables["p"].value, self.params.K).reshape(
                 self.params.K,
             )
         )
@@ -211,39 +230,35 @@ class SpaceshipPlanner:
         mycmds, mystates = self._extract_seq_from_array(
             timestamps, self.variables["U"].value.T, self.variables["X"].value.T
         )
-
-        return mycmds, mystates
+        tf = self.variables["p"].value + init_time
+        return mycmds, mystates, tf
 
     def initial_guess(self) -> tuple[NDArray, NDArray, NDArray]:
         """
         Define initial guess for SCvx.
         """
         K = self.params.K
+        # Page 27
+        # "However, the algorithms do require the guess to be feasible with respect to the convex path constraints"
+        # this guess is straight line interpolation
 
-        X = np.zeros((self.spaceship.n_x, K))
         U = np.zeros((self.spaceship.n_u, K))
-        p = np.ones((self.spaceship.n_p))
+        p = np.zeros((self.spaceship.n_p))
 
-        X[0, :] = np.linspace(self.init_state.x, self.goal_state.x, K)
-        X[1, :] = np.linspace(self.init_state.y, self.goal_state.y, K)
-        X[2, :] = np.linspace(self.init_state.psi, self.goal_state.psi, K)
-        X[7, :] = self.init_state.m
-        U[:] = 0
+        # U is sequence of controls, no idea about the values, start with all 0s
+        # this is compliant with constraint on U(t_0) = U(t_f) = 0
+        pass
+        # X is sequence of controls, interpolate as https://stackoverflow.com/a/38087893
+        alpha = np.expand_dims(np.linspace(0, 1, K), axis=1)
+        X = ((1 - alpha) * self.init_state.as_ndarray() + alpha * self.goal_state.as_ndarray()).T
+        # p just contains t_f
         p[0] = 10.0
 
-        # print(X.shape, U.shape, p.shape)
-        # assert X.shape == (self.spaceship.n_x, K)
-        # assert U.shape == (self.spaceship.n_u, K)
-        # assert p.shape == (self.spaceship.n_p)
+        assert X.shape == (self.spaceship.n_x, K)
+        assert U.shape == (self.spaceship.n_u, K)
+        assert p.shape == (self.spaceship.n_p,)
 
         return X, U, p
-
-    def _set_goal(self):
-        """
-        Sets goal for SCvx.
-        """
-        self.goal = cvx.Parameter((6, 1))
-        pass
 
     def _get_variables(self) -> dict:
         """
@@ -252,7 +267,7 @@ class SpaceshipPlanner:
         variables = {
             "X": cvx.Variable((self.spaceship.n_x, self.params.K)),
             "U": cvx.Variable((self.spaceship.n_u, self.params.K)),
-            "p": cvx.Variable(self.spaceship.n_p),
+            "p": cvx.Variable(self.spaceship.n_p, nonneg=True),
             "nu_dyn": cvx.Variable((self.spaceship.n_x, self.params.K - 1)),
         }
 
@@ -279,7 +294,7 @@ class SpaceshipPlanner:
             "r": cvx.Parameter((self.spaceship.n_x, self.params.K - 1)),
             "X_ref": cvx.Parameter((self.spaceship.n_x, self.params.K)),
             "U_ref": cvx.Parameter((self.spaceship.n_u, self.params.K)),
-            "p_ref": cvx.Parameter((self.spaceship.n_p)),
+            "p_ref": cvx.Parameter((self.spaceship.n_p), nonneg=True),
             "eta": cvx.Parameter(nonneg=True),
             # Jacobians (Eq44)
             # virutal control variables,
@@ -295,10 +310,6 @@ class SpaceshipPlanner:
         """
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
-            self.variables["p"] >= 0,
-            self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
-            self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
-            # ]
             # boundary_constraints = [
             self.variables["X"][0, :] >= self.bounds[0] + self.sg.l / 2,
             self.variables["X"][1, :] >= self.bounds[1] + self.sg.l / 2,
@@ -310,7 +321,7 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(boundary_constraints)
             # control_constraints = [
-            self.variables["U"][:, 0] == 0,
+            self.variables["U"][:, 0] == self.problem_parameters["U_ref"][:, 0],  # forced at initial input
             self.variables["U"][:, -1] == 0,
             self.variables["U"][0, :] >= self.spaceship.sp.thrust_limits[0],
             self.variables["U"][0, :] <= self.spaceship.sp.thrust_limits[1],
@@ -319,19 +330,14 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(control_constraints)
             # docking_constraints = [
-            cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][0, -2] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][1, -2] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            cvx.norm2(self.variables["X"][2, -2] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            cvx.norm2(self.variables["X"][3, -2] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
+            cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2]) <= 0.2 * self.pos_tol,
+            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
+            cvx.norm2(self.variables["X"][3:5, -1] - self.problem_parameters["goal_state"][3:5]) <= self.vel_tol,
         ]
-        # constraints.extend(docking_constraints)
-
+        if isinstance(self.goal, DockingTarget):
+            # assuming the docking station is facing the spaceship from start
+            # also assuming the spaceship would never have to go beyond the line of dock obstacle
+            pass
         # Boundary constraints on state,
         # see Constraints in writeup,
         # dynamics constraints (Eq55),
@@ -579,240 +585,3 @@ class SpaceshipPlanner:
             )
 
         return cost
-
-    def initial_guess_astar(self):
-        """
-        Generate an initial guess for SCvx using the A* algorithm.
-        """
-        # Extract world bounds from self.bounds
-        x_min = self.bounds[0] + self.sg.l / 2
-        y_min = self.bounds[1] + self.sg.l / 2
-        x_max = self.bounds[2] - self.sg.l / 2
-        y_max = self.bounds[3] - self.sg.l / 2
-        grid_resolution = 0.1  # Size of each grid cell
-        grid_size_x = int((x_max - x_min) / grid_resolution)
-        grid_size_y = int((y_max - y_min) / grid_resolution)
-
-        # Create grid and mark occupied cells
-        grid = np.zeros((grid_size_x, grid_size_y), dtype=bool)
-        for _, param in self.planets.items():
-            cx, cy = param.center
-            radius = param.radius + self.sg.l / 2
-            self._mark_obstacle_in_grid(grid, cx, cy, radius, grid_resolution, x_min, y_min)
-
-        for name, param in self.satellites.items():
-            planet_name = name.split("/")[0]
-            planet_center = self.planets[planet_name].center
-            cx, cy = planet_center + param.orbit_r * np.array([np.cos(param.tau), np.sin(param.tau)])
-            radius = param.radius + self.sg.l / 2
-            self._mark_obstacle_in_grid(grid, cx, cy, radius, grid_resolution, x_min, y_min)
-
-        # A* search
-        start = self._to_grid_coords(self.init_state.x, self.init_state.y, grid_resolution, x_min, y_min)
-        goal = self._to_grid_coords(self.goal_state.x, self.goal_state.y, grid_resolution, x_min, y_min)
-        path = self._astar(grid, start, goal)
-
-        # Convert path back to continuous domain
-        if not path:
-            raise RuntimeError("A* could not find a feasible path.")
-
-        waypoints = [self._to_continuous_coords(p[0], p[1], grid_resolution, x_min, y_min) for p in path]
-        waypoints = np.array(waypoints).T  # Convert to (2, n) format
-
-        # Interpolate to SCvx timesteps
-        X = np.zeros((self.spaceship.n_x, self.params.K))
-        U = np.zeros((self.spaceship.n_u, self.params.K))
-        p = np.ones((self.spaceship.n_p))
-
-        t = np.linspace(0, 1, len(waypoints[0]))
-        for i in range(X.shape[1]):
-            X[0, i] = np.interp(i / (X.shape[1] - 1), t, waypoints[0])
-            X[1, i] = np.interp(i / (X.shape[1] - 1), t, waypoints[1])
-
-        X[7, :] = self.init_state.m  # Assume constant mass
-        p[0] = 10.0  # Initial guess for total time
-
-        return X, U, p
-
-    def _to_grid_coords(self, x, y, resolution, x_min, y_min):
-        """
-        Convert continuous coordinates to grid indices, considering bounds.
-        """
-        return int((x - x_min) / resolution), int((y - y_min) / resolution)
-
-    def _mark_obstacle_in_grid(self, grid, cx, cy, radius, resolution, x_min, y_min):
-        """
-        Mark cells in the grid as occupied for a circular obstacle, considering bounds.
-        """
-        cx_idx, cy_idx = self._to_grid_coords(cx, cy, resolution, x_min, y_min)
-
-        radius_cells = int(radius / resolution)
-        for dx in range(-radius_cells, radius_cells + 1):
-            for dy in range(-radius_cells, radius_cells + 1):
-                x = cx_idx + dx
-                y = cy_idx + dy
-                if 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]:
-                    if np.sqrt(dx**2 + dy**2) * resolution <= radius:
-                        grid[x, y] = True
-
-    def _to_continuous_coords(self, x_idx, y_idx, resolution, x_min, y_min):
-        """
-        Convert grid indices to continuous coordinates, considering bounds.
-        """
-        return x_min + x_idx * resolution, y_min + y_idx * resolution
-
-    def _astar(self, grid, start, goal):
-        """
-        A* algorithm for pathfinding on a 2D grid.
-
-        Parameters:
-        - grid: 2D numpy array where True/1 represents obstacles, False/0 represents passable cells
-        - start: tuple (x, y) of start coordinates
-        - goal: tuple (x, y) of goal coordinates
-
-        Returns:
-        - Path from start to goal, or None if no path exists
-        """
-
-        def heuristic(a, b):
-            # Euclidean distance heuristic
-            return np.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
-
-        def is_valid_cell(cell):
-            # Check if cell is within grid and not an obstacle
-            x, y = cell
-            return 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1] and grid[x, y] == 0  # Assuming 0 means passable
-
-        # Open set as a priority queue
-        open_set = []
-        heapq.heappush(open_set, (0, start))
-
-        # Dictionaries to track path and scores
-        came_from = {}
-        g_score = {start: 0}
-        f_score = {start: heuristic(start, goal)}
-
-        # Possible movement directions (4-connectivity)
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-
-        while open_set:
-            current_f, current = heapq.heappop(open_set)
-
-            # Goal check
-            if current == goal:
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                path.append(start)
-                return path[::-1]  # Reverse path
-
-            # Check neighbors
-            for dx, dy in directions:
-                neighbor = (current[0] + dx, current[1] + dy)
-
-                # Validate neighbor
-                if not is_valid_cell(neighbor):
-                    continue
-
-                # Calculate tentative g score
-                tentative_g_score = g_score[current] + 1
-
-                # Update if this path is better
-                if neighbor not in g_score or tentative_g_score < g_score.get(neighbor, float("inf")):
-
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g_score
-                    f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
-
-                    # Add to open set if not already present
-                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
-
-        return None  # No path found
-
-    def plot_trajectory(self, X, title="Trajectory Visualization", save_path=None):
-        """
-        Plot the trajectory, planets, and world bounds, and optionally save the plot to a file.
-
-        Parameters:
-        - X: numpy array, trajectory states (shape: n_x x K)
-        - title: string, title of the plot
-        - save_path: string or None, if specified, saves the plot to this path
-        """
-        # Extract trajectory data
-        x_traj = X[0, :]
-        y_traj = X[1, :]
-
-        # Extract bounds
-        x_min = self.bounds[0] + self.sg.l / 2
-        y_min = self.bounds[1] + self.sg.l / 2
-        x_max = self.bounds[2] - self.sg.l / 2
-        y_max = self.bounds[3] - self.sg.l / 2
-
-        # Create plot
-        fig, ax = plt.subplots(figsize=(10, 10))
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-
-        # Plot world bounds
-        rect = patches.Rectangle(
-            (x_min, y_min),
-            x_max - x_min,
-            y_max - y_min,
-            linewidth=1,
-            edgecolor="black",
-            facecolor="none",
-        )
-        ax.add_patch(rect)
-
-        # Plot planets
-        for name, param in self.planets.items():
-            planet = patches.Circle(
-                param.center,
-                param.radius,
-                color="blue",
-                alpha=0.5,
-            )
-            ax.add_patch(planet)
-
-        for name, param in self.satellites.items():
-            planet_name = name.split("/")[0]
-            planet_center = self.planets[planet_name].center
-            center = planet_center + param.orbit_r * np.array([np.cos(param.tau), np.sin(param.tau)])
-            radius = param.radius
-            satellite = patches.Circle(
-                center,
-                radius,
-                color="red",
-                alpha=0.5,
-            )
-            ax.add_patch(satellite)
-
-        # Plot trajectory
-        ax.plot(
-            x_traj,
-            y_traj,
-            "-o",
-            color="red",
-            markersize=4,
-            label="Trajectory",
-        )
-
-        # Add labels and legend
-        ax.set_xlabel("X-coordinate")
-        ax.set_ylabel("Y-coordinate")
-        ax.set_title(title)
-        ax.legend()
-
-        plt.grid()
-
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Create the full save path
-        save_path = os.path.join(script_dir, "gigi")
-
-        plt.savefig(save_path, dpi=300)
-        print(f"Plot saved to {save_path}")
-
-        # Show the plot
-        plt.show()
