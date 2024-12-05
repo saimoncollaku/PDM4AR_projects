@@ -112,21 +112,21 @@ class SpaceshipAgent(Agent):
 
         self.cmds_plan, self.state_traj = self.planner.compute_trajectory(self.init_state, self.goal_state, dock_points)
 
-        self.fig, self.ax = plt.subplots(figsize=(36, 25), dpi=120)
-        self.ax.set_xlim([self.bounds[0], self.bounds[2]])
-        self.ax.set_ylim([self.bounds[1], self.bounds[3]])
-        self.savedir = (
-            "../../out/11/" + str(len(self.satellites)) + "_" + str(round(self.planets["Namek"].center[1], 2))
-        )
-        for name, planet in self.planets.items():
-            planet = plt.Circle(planet.center, planet.radius, color="green")
-            self.ax.add_patch(planet)
-        if not os.path.exists(self.savedir):
-            os.mkdir(self.savedir)
-        self.fig.savefig(
-            self.savedir + "/mismatch.png",
-            bbox_inches="tight",
-        )
+        # self.fig, self.ax = plt.subplots(figsize=(36, 25), dpi=120)
+        # self.ax.set_xlim([self.bounds[0], self.bounds[2]])
+        # self.ax.set_ylim([self.bounds[1], self.bounds[3]])
+        # self.savedir = (
+        #     "../../out/11/" + str(len(self.satellites)) + "_" + str(round(self.planets["Namek"].center[1], 2))
+        # )
+        # for name, planet in self.planets.items():
+        #     planet = plt.Circle(planet.center, planet.radius, color="green")
+        #     self.ax.add_patch(planet)
+        # if not os.path.exists(self.savedir):
+        #     os.mkdir(self.savedir)
+        # self.fig.savefig(
+        #     self.savedir + "/mismatch.png",
+        #     bbox_inches="tight",
+        # )
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
