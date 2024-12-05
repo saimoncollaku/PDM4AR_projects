@@ -37,6 +37,14 @@ class Visualizer:
             self.global_ax.add_patch(planet)
         self.global_dock = False
 
+        self.sp_head = np.sqrt(
+            (self.sg.l_f + self.sg.l_c) ** 2 + self.sg.w_half**2,
+        )
+
+        self.sp_tail = np.sqrt(
+            (self.sg.l_r) ** 2 + self.sg.w_half**2,
+        )
+
     def vis_iter(self, iteration, X, U, p, kappa_planets, kappa_sats, dock_points):
         fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
         ax.set_xlim([self.bounds[0], self.bounds[2]])
@@ -159,7 +167,13 @@ class Visualizer:
             )
 
         for k in range(self.params.K):
-            block = plt.Circle(X[0:2, k], min_kappa[k], alpha=0.1, color="grey")
+            head = [X[0, k] + self.sp_head * np.cos(X[2, k]), X[1, k] + self.sp_head * np.sin(X[2, k])]
+            block = plt.Circle(head, min_kappa[k], alpha=0.1, color="orange")
+            ax.add_patch(block)
+            tail = [X[0, k] - self.sp_tail * np.cos(X[2, k]), X[1, k] - self.sp_tail * np.sin(X[2, k])]
+            block = plt.Circle(tail, min_kappa[k], alpha=0.1, color="orange")
+            ax.add_patch(block)
+            block = plt.Circle(X[0:2, k], min_kappa[k], alpha=0.1, color="orange")
             ax.add_patch(block)
 
         savedir = "../../out/11/" + str(len(self.satellites)) + "_" + str(round(self.planets["Namek"].center[1], 2))
