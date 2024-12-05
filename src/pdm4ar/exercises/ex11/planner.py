@@ -102,13 +102,8 @@ class SpaceshipPlanner:
         self.bounds = bounds
         self.pos_tol, self.vel_tol, self.dir_tol = tolerances
 
-        self.sp_head = np.sqrt(
-            (self.sg.l_f + self.sg.l_c) ** 2 + self.sg.w_half**2,
-        )
-
-        self.sp_tail = np.sqrt(
-            (self.sg.l_r) ** 2 + self.sg.w_half**2,
-        )
+        self.sp_head = self.sg.l_f + self.sg.l_c
+        self.sp_tail = self.sg.l_r
 
         self.clearance = self.sg.width + 0.1
 
@@ -128,11 +123,13 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        self.verbose = True
         self.iteration = 0
-        self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
+
+        self.verbose = False
         self.visualize = True
-        self.vis_per_iters = 5
+
+        self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
+        self.vis_per_iters = 10
         self.vis_iter = -1
 
     def compute_trajectory(
@@ -154,13 +151,18 @@ class SpaceshipPlanner:
         )
 
         self.dock_points = dock_points
-        # if dock_points is not None:
-        #     offset_goal = dock_points[0]
-        #     self.goal_state.x = offset_goal[0]
-        #     self.goal_state.y = offset_goal[1]
+        self.docking_goal = False
+        if dock_points is not None:
+            self.docking_goal = True
+            dock_start, dock_end = self.dock_points[3], self.dock_points[4]
+            dock_base_vec = (
+                self.goal_state.as_ndarray()[0:2] - (dock_start + dock_end) / 2
+            )  # offset * np.array[cos(psi), sin(psi)]
+            self.dock_offset = np.linalg.norm(dock_base_vec, 2)
 
-        print("Start: ", self.init_state)
-        print("Goal: ", self.goal_state)
+        if self.verbose:
+            print("Start: ", self.init_state)
+            print("Goal: ", self.goal_state)
 
         self.problem_parameters["eta"].value = self.params.tr_radius
 
@@ -170,7 +172,8 @@ class SpaceshipPlanner:
             self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
         else:
             self.p_bar = p
-            self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
+            if self.visualize:
+                self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
@@ -183,8 +186,6 @@ class SpaceshipPlanner:
                 error = self.problem.solve(verbose=self.params.verbose_solver, solver=self.params.solver)
             except cvx.SolverError:
                 print(f"SolverError: {self.params.solver} failed to solve the problem.")
-            print(str(self.iteration) + ":  ", self.problem.status)
-            print("[t_f]: {}".format(round(self.variables["p"].value[0], 6)))
 
             if self.problem.status != "infeasible" and self._check_convergence(
                 self.variables["nu_dyn"].value,
@@ -192,10 +193,10 @@ class SpaceshipPlanner:
                 {name: self.variables["nu_" + name].value for name in self.satellites},
             ):
                 print("Converged in {} iterations..".format(self.iteration))
-                print("p: ", self.variables["p"].value.round(2))
-                print("X: ", self.variables["X"].value[0:2].round(2))
-                print("U: ", self.variables["U"].value[0:2].round(2))
                 if self.verbose:
+                    print("p: ", self.variables["p"].value.round(2))
+                    print("X: ", self.variables["X"].value[0:2].round(2))
+                    print("U: ", self.variables["U"].value[0:2].round(2))
                     print("[Slack violations]")
                     print(
                         "Dynamics: ",
@@ -309,10 +310,6 @@ class SpaceshipPlanner:
             "U_ref": cvx.Parameter((self.spaceship.n_u, self.params.K)),
             "p_ref": cvx.Parameter((self.spaceship.n_p)),
             "eta": cvx.Parameter(nonneg=True),
-            # Jacobians (Eq44)
-            # virutal control variables,
-            # trust region variables,
-            # g_ic, g_tc?
         }
 
         return problem_parameters
@@ -324,7 +321,7 @@ class SpaceshipPlanner:
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
             # self.variables["p"] >= 0,
-            self.variables["X"][0:5, -1] == self.problem_parameters["goal_state"][0:5],
+            self.variables["X"][2:5, -1] == self.problem_parameters["goal_state"][2:5],
             # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
             # boundary_constraints = [
@@ -359,6 +356,19 @@ class SpaceshipPlanner:
             # cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
         ]
         # constraints.extend(docking_constraints)
+
+        # put spaceship tail point at goal, avoids collision.
+        l = self.sp_tail - 0.5 * self.dock_offset if self.docking_goal else 0
+        goal_x_constraint = (
+            self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
+            == self.problem_parameters["goal_state"][0]
+        )
+        goal_y_constraint = (
+            self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
+            == self.problem_parameters["goal_state"][1]
+        )
+        constraints.append(goal_x_constraint)
+        constraints.append(goal_y_constraint)
 
         # Boundary constraints on state,
         # see Constraints in writeup,
@@ -495,11 +505,11 @@ class SpaceshipPlanner:
                     ]
                 )
                 for j in range(4):
-                    corner_constraint = (
+                    bound_constraint = (
                         -ẟx[j] - ẟψ[j] * Δψ
                         >= r[j] + self.clearance - self.variables["nu_bounds"][j * 3 * k + i * k + k]
                     )
-                    constraints.append(corner_constraint)
+                    constraints.append(bound_constraint)
 
         if self.visualize and self.iteration == self.vis_iter:
             self.visualizer.vis_k(
@@ -527,6 +537,7 @@ class SpaceshipPlanner:
         objective += 10.0 * sum(
             [cvx.norm2(self.variables["X"][0:2, k + 1] - self.variables["X"][0:2, k]) for k in range(self.params.K - 1)]
         )
+        objective += 20.0 * cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
 
         return cvx.Minimize(objective)
 
@@ -560,12 +571,16 @@ class SpaceshipPlanner:
         """
         actual_cost = self.J(self.X_bar, self.U_bar, self.p_bar)
         linearized_cost = self.L(nu_dyn, nu_planets, nu_satellites)
-        if self.verbose:
-            print(
-                "[Convergence] J = {}, L = {}, J - L = {}".format(
-                    round(actual_cost, 6), round(linearized_cost, 6), round(actual_cost - linearized_cost, 6)
-                )
+        print(
+            "[{}] {}, t_f = {:.6f} | J = {:.6f}, L = {:.6f} | J - L = {:.6f}".format(
+                self.iteration,
+                self.problem.status,
+                self.variables["p"].value[0],
+                actual_cost,
+                linearized_cost,
+                actual_cost - linearized_cost,
             )
+        )
 
         return actual_cost < self.params.stop_crit and actual_cost - linearized_cost < self.params.stop_crit
 
@@ -659,14 +674,18 @@ class SpaceshipPlanner:
             b += np.sum(np.maximum(self.bounds[1] + self.clearance - pos_y, 0))
             b += np.sum(np.maximum(pos_x - self.bounds[2] + self.clearance, 0))
             b += np.sum(np.maximum(pos_y - self.bounds[3] + self.clearance, 0))
+
         if self.verbose:
             print(
                 "[J]: defect = {}, planet_obs = {}, satellite_obs = {}, boundary_obs = {}".format(
-                    round(δ, 6), round(s_p, 6), round(s, 6), round(b, 6)
+                    round(δ, 6),
+                    round(s_p, 6),
+                    round(s, 6),
+                    round(b, 6),
                 )
             )
 
-        return δ + s_p + s
+        return δ + s_p + s + b
 
     def L(self, nu_dyn, nu_planets, nu_satellites):
         # eqns 52-54
@@ -677,11 +696,9 @@ class SpaceshipPlanner:
         nu_bounds = self.variables["nu_bounds"].value
         cost += np.sum(nu_bounds)
 
-        # print(nu_planets, nu_satellites)
-
         if self.verbose:
             print(
-                "[L]: nu_dyn = {}, nu_planets = {}, nu_satellites = {}".format(
+                "[L]: nu_dyn = {}, nu_planets = {}, nu_satellites = {}, nu_bounds = {}".format(
                     round(np.linalg.norm(nu_dyn, 1), 6),
                     round(np.sum([nu for nu in nu_planets.values()]), 6),
                     round(np.sum([nu for nu in nu_satellites.values()]), 6),
@@ -970,4 +987,4 @@ class SpaceshipPlanner:
         print(f"Plot saved to {save_path}")
 
         # Show the plot
-        plt.show()
+        # plt.show()

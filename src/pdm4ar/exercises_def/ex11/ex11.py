@@ -73,11 +73,11 @@ def load_config_ex11(file_path: Path) -> Mapping:
 def get_exercise11():
     config_dir = Path(__file__).parent
     configs = [
-        # "config_planet.yaml",
+        "config_planet.yaml",
         "config_planet_boundary.yaml",
-        # "config_satellites.yaml",
-        # "config_satellites_diff.yaml",
-        # "config_satellites_crash.yaml",
+        "config_satellites.yaml",
+        "config_satellites_diff.yaml",
+        "config_satellites_crash.yaml",
         # "config_satellites_hard.yaml",
         # "config_satellites_extreme_fail.yaml",
         # "config_satellites_extreme_easy.yaml",
