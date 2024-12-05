@@ -476,7 +476,7 @@ class SpaceshipPlanner:
                 )
             )
 
-        return actual_cost - linearized_cost < self.params.stop_crit
+        return (actual_cost - linearized_cost < self.params.stop_crit) and (actual_cost < self.params.stop_crit * 100)
 
     def _update_trust_region(self):
         """

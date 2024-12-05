@@ -181,11 +181,11 @@ class SpaceshipAgent(Agent):
 
             assert prev_states.shape == (8, SolverParameters.K)
             assert prev_cmds.shape == (2, SolverParameters.K)
-            # print("state init trajectory to follow:")
-            # print(prev_states[0:2, :].round(6))
-            # self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
-            #     current_state, self.goal, time, prev_states, prev_cmds, prev_tf
-            # )
+            print("state init trajectory to follow:")
+            print(prev_states[0:2, :].round(6))
+            self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
+                current_state, self.goal, time, prev_states, prev_cmds, prev_tf
+            )
 
         # ZeroOrderHold
         # cmds = self.cmds_plan.at_or_previous(sim_obs.time)

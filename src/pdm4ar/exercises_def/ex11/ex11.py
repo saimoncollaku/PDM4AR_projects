@@ -64,6 +64,7 @@ def get_exercise11():
     config_dir = Path(__file__).parent
     configs = ["config_planet.yaml", "config_satellites.yaml", "config_satellites_diff.yaml"]
     # configs = ["config_planet_boundary.yaml"]
+    # configs = ["config_planet_boundary.yaml"]
     # configs = ["config_satellites.yaml"]
     # configs = ["config_planet.yaml"]
     # configs = ["config_satellites_diff.yaml"]
