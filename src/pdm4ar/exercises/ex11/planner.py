@@ -126,7 +126,7 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        self.verbose = False
+        self.verbose = True
         self.iteration = 0
         # self.visualizer = Visualizer(self.bounds, self.r_s, planets, satellites, self.params)
         self.visualize = False
@@ -159,6 +159,8 @@ class SpaceshipPlanner:
             init_state.m,
         )
         self.goal = goal
+        self.init_time = init_time
+
         if self.verbose:
             print("Planner received init and goal states:")
             print(self.init_state, self.goal_state)
@@ -401,7 +403,9 @@ class SpaceshipPlanner:
                 planet_name = name.split("/")[0]
                 r = satellite.radius + self.r_s - self.variables["kappa_" + str(name)][k]
                 t = k / self.params.K
-                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + satellite.tau
+                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + (
+                    satellite.tau + satellite.omega * self.init_time
+                )
                 Δθ = np.array([np.cos(θ), np.sin(θ)])
                 satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
                 Δr = self.problem_parameters["X_ref"][0:2, k] - satellite_center

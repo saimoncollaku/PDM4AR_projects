@@ -25,8 +25,10 @@ class MyAgentParams:
     You can for example define some agent parameters.
     """
 
-    my_tol: float = 0.3
+    end_tol: float = 0.3
+    max_tol: float = 1.0
     debug: bool = True
+    cache: bool = True
 
 
 class SpaceshipAgent(Agent):
@@ -115,16 +117,17 @@ class SpaceshipAgent(Agent):
         planet_satellites = planet_names + "_" + satellite_names
 
         savefile = f"first_trajectory_{planet_satellites}.pkl"
-        if MyAgentParams.debug and os.path.exists(savefile):
+        if MyAgentParams.cache and os.path.exists(savefile) and False:
             print(f"WARNING: Picking up first trajectory from file {savefile}")
             with open(savefile, "rb") as f:
                 self.cmds_plan, self.state_traj, self.tf = pickle.load(f)
         else:
             self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(self.init_state, self.goal, 0)
-            if MyAgentParams.debug:
+            if MyAgentParams.cache:
                 print("Saving trajectory to file", savefile)
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
+        self.end_replanned = False
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
@@ -158,8 +161,12 @@ class SpaceshipAgent(Agent):
             print(f"In simulation time: {time} diff: {diff.round(4)}, state_deviation: {state_deviation}")
 
         # dont_plan_last_moment = time < (self.tf - 1.0)
-        if diff > MyAgentParams.my_tol:
+        # if diff > MyAgentParams.end_tol:
+        handle_ending = time > self.tf - 1.0 and diff > MyAgentParams.end_tol
+        handle_chaos = diff > MyAgentParams.max_tol
+        if (handle_ending and not self.end_replanned) or (handle_chaos and self.replans < 10):  # do only 1 replan
             # if time > self.tf * 0.8 and self.replans < 0:
+            self.end_replanned = True
             self.replans += 1
             if MyAgentParams.debug:
                 print(f"\nReplanning {self.replans}th time\n")
@@ -176,9 +183,9 @@ class SpaceshipAgent(Agent):
             assert prev_cmds.shape == (2, SolverParameters.K)
             # print("state init trajectory to follow:")
             # print(prev_states[0:2, :].round(6))
-            self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
-                current_state, self.goal, time, prev_states, prev_cmds, prev_tf
-            )
+            # self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
+            #     current_state, self.goal, time, prev_states, prev_cmds, prev_tf
+            # )
 
         # ZeroOrderHold
         # cmds = self.cmds_plan.at_or_previous(sim_obs.time)
