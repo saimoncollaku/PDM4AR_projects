@@ -55,6 +55,7 @@ class SolverParameters:
     K: int = 50  # number of discretization steps
     N_sub: int = 5  # used inside ode solver inside discretization
     stop_crit: float = 1e-5  # Stopping criteria constant
+    max_constancy_iterations: int = 5  # number of J ~ L iterations allowed
 
 
 class SpaceshipPlanner:
@@ -82,13 +83,16 @@ class SpaceshipPlanner:
     U_bar: NDArray
     p_bar: NDArray
 
+    j_values: NDArray
+    l_values: NDArray
+
     def __init__(
         self,
         planets: dict[PlayerName, PlanetParams],
         satellites: dict[PlayerName, SatelliteParams],
         sg: SpaceshipGeometry,
         sp: SpaceshipParameters,
-        bounds: Sequence[StaticObstacle],
+        bounds: Sequence[float],
         tolerances: Sequence[float],
     ):
         """
@@ -123,21 +127,30 @@ class SpaceshipPlanner:
         # Problem Parameters
         self.problem_parameters = self._get_problem_parameters()
 
-        self.iteration = 0
-
         self.verbose = False
-        self.visualize = True
+        self.visualize = False
 
         self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
         self.vis_per_iters = 10
         self.vis_iter = -1
 
     def compute_trajectory(
-        self, init_state: SpaceshipState, goal_state: DynObstacleState, dock_points
-    ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState]]:
+        self,
+        init_state: SpaceshipState,
+        goal_state: DynObstacleState,
+        dock_points,
+        init_time: float,
+        init_X: np.ndarray | None = None,
+        init_U: np.ndarray | None = None,
+        init_p: np.ndarray | None = None,
+    ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState], float]:
         """
         Compute a trajectory from init_state to goal_state.
         """
+        self.j_values = np.zeros((self.params.max_iterations))
+        self.l_values = np.zeros((self.params.max_iterations))
+        self.iteration = 0
+
         self.init_state = init_state
         self.goal_state = SpaceshipState(
             goal_state.x,
@@ -167,13 +180,22 @@ class SpaceshipPlanner:
         self.problem_parameters["eta"].value = self.params.tr_radius
 
         # set reference trajectory X_bar, U_bar, p_bar
-        self.X_bar, self.U_bar, p = self.initial_guess_astar()
-        if p is None:
-            self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+        # set reference trajectory X_bar, U_bar, p_bar
+        if init_X is not None and init_U is not None and init_p is not None:
+            if self.verbose:
+                print("Picked up supplied init X, U, p values")
+            self.X_bar, self.U_bar, self.p_bar = init_X, init_U, init_p
+            self.min_time = init_p * 2
         else:
-            self.p_bar = p
-            if self.visualize:
-                self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
+            self.X_bar, self.U_bar, p = self.initial_guess_astar()
+            if p is None:
+                self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
+            else:
+                self.p_bar = p
+                if self.visualize:
+                    self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
+
+        self.init_time = init_time
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
@@ -228,7 +250,7 @@ class SpaceshipPlanner:
 
         # Example data: sequence from array
         timestamps = list(
-            np.linspace(0, self.variables["p"].value, self.params.K).reshape(
+            np.linspace(self.init_time, self.init_time + self.variables["p"].value, self.params.K).reshape(
                 self.params.K,
             )
         )
@@ -236,8 +258,8 @@ class SpaceshipPlanner:
         mycmds, mystates = self._extract_seq_from_array(
             timestamps, self.variables["U"].value.T, self.variables["X"].value.T
         )
-
-        return mycmds, mystates
+        tf = self.variables["p"].value + init_time
+        return mycmds, mystates, tf
 
     def initial_guess(self) -> tuple[NDArray, NDArray, NDArray]:
         """
@@ -256,16 +278,19 @@ class SpaceshipPlanner:
         U[:] = 0
         # p[0] = 10.0
 
-        total_dist = np.sqrt(
-            (self.init_state.x - self.goal_state.x) ** 2 + (self.init_state.y - self.goal_state.y) ** 2
-        )
-        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
-        self.min_time = np.sqrt(2 * total_dist / avg_acc)
+        self.min_time = self._get_min_time_with_line_approx()
         # print("Naive: ", total_dist, min_time)
 
         p[0] = 2 * self.min_time
 
         return X, U, p
+
+    def _get_min_time_with_line_approx(self):
+        total_dist = np.sqrt(
+            (self.init_state.x - self.goal_state.x) ** 2 + (self.init_state.y - self.goal_state.y) ** 2
+        )
+        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
+        return np.sqrt(2 * total_dist / avg_acc)
 
     def _set_goal(self):
         """
@@ -308,7 +333,7 @@ class SpaceshipPlanner:
             "r": cvx.Parameter((self.spaceship.n_x, self.params.K - 1)),
             "X_ref": cvx.Parameter((self.spaceship.n_x, self.params.K)),
             "U_ref": cvx.Parameter((self.spaceship.n_u, self.params.K)),
-            "p_ref": cvx.Parameter((self.spaceship.n_p)),
+            "p_ref": cvx.Parameter((self.spaceship.n_p), nonneg=True),
             "eta": cvx.Parameter(nonneg=True),
         }
 
@@ -320,8 +345,11 @@ class SpaceshipPlanner:
         """
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
+            # self.variables["X"][2:5, -1] == self.problem_parameters["goal_state"][2:5],
+            cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2]) <= 0.2 * self.pos_tol,
+            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
+            cvx.norm2(self.variables["X"][3:5, -1] - self.problem_parameters["goal_state"][3:5]) <= self.vel_tol,
             # self.variables["p"] >= 0,
-            self.variables["X"][2:5, -1] == self.problem_parameters["goal_state"][2:5],
             # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
             # boundary_constraints = [
@@ -335,7 +363,7 @@ class SpaceshipPlanner:
             # ]
             # constraints.extend(boundary_constraints)
             # control_constraints = [
-            self.variables["U"][:, 0] == 0,
+            self.variables["U"][:, 0] == self.problem_parameters["U_ref"][:, 0],
             self.variables["U"][:, -1] == 0,
             self.variables["U"][0, :] >= self.spaceship.sp.thrust_limits[0],
             self.variables["U"][0, :] <= self.spaceship.sp.thrust_limits[1],
@@ -359,16 +387,16 @@ class SpaceshipPlanner:
 
         # put spaceship tail point at goal, avoids collision.
         l = self.sp_tail - 0.5 * self.dock_offset if self.docking_goal else 0
-        goal_x_constraint = (
-            self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
-            == self.problem_parameters["goal_state"][0]
-        )
-        goal_y_constraint = (
-            self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
-            == self.problem_parameters["goal_state"][1]
-        )
-        constraints.append(goal_x_constraint)
-        constraints.append(goal_y_constraint)
+        # goal_x_constraint = (
+        #     self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
+        #     == self.problem_parameters["goal_state"][0]
+        # )
+        # goal_y_constraint = (
+        #     self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
+        #     == self.problem_parameters["goal_state"][1]
+        # )
+        # constraints.append(goal_x_constraint)
+        # constraints.append(goal_y_constraint)
 
         # Boundary constraints on state,
         # see Constraints in writeup,
@@ -437,7 +465,9 @@ class SpaceshipPlanner:
             r = satellite.radius + self.clearance
             for k in range(self.params.K):
                 t = k / self.params.K
-                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + satellite.tau
+                θ = satellite.omega * self.problem_parameters["p_ref"].value[0] * t + (
+                    satellite.tau + satellite.omega * self.init_time
+                )
                 Δx = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
                 Δψ = self.variables["X"][2, k] - self.problem_parameters["X_ref"][2, k]
                 Δp = self.variables["p"][0] - self.problem_parameters["p_ref"][0]
@@ -571,6 +601,8 @@ class SpaceshipPlanner:
         """
         actual_cost = self.J(self.X_bar, self.U_bar, self.p_bar)
         linearized_cost = self.L(nu_dyn, nu_planets, nu_satellites)
+        self.j_values[self.iteration] = actual_cost
+        self.l_values[self.iteration] = linearized_cost
         print(
             "[{}] {}, t_f = {:.6f} | J = {:.6f}, L = {:.6f} | J - L = {:.6f}".format(
                 self.iteration,
@@ -582,7 +614,19 @@ class SpaceshipPlanner:
             )
         )
 
-        return actual_cost < self.params.stop_crit and actual_cost - linearized_cost < self.params.stop_crit
+        actual_cost_small: bool = actual_cost < 10 * self.params.stop_crit
+        difference_between_costs_small = actual_cost - linearized_cost < self.params.stop_crit
+        if self.iteration > self.params.max_constancy_iterations:
+            last_js = self.j_values[self.iteration - self.params.max_constancy_iterations : self.iteration]
+            last_ls = self.l_values[self.iteration - self.params.max_constancy_iterations : self.iteration]
+            j_value_mean = np.mean(last_js) * np.ones(5)
+            l_value_mean = np.mean(last_ls) * np.ones(5)
+            constancy: bool = bool(np.isclose(j_value_mean, last_js).all() and np.isclose(l_value_mean, last_ls).all())
+            # constancy = np.allclose(last_js, last_ls)
+        else:
+            constancy = False
+
+        return (difference_between_costs_small and actual_cost_small) or constancy
 
     def _update_trust_region(self):
         """
@@ -641,7 +685,7 @@ class SpaceshipPlanner:
 
         return cmds, states
 
-    def J(self, X, U, p):
+    def J(self, X, U, p) -> float:
         φ = self.integrator.integrate_nonlinear_piecewise(X, U, p)
         δ = np.linalg.norm(X - φ, 1)
 
@@ -687,7 +731,7 @@ class SpaceshipPlanner:
 
         return δ + s_p + s + b
 
-    def L(self, nu_dyn, nu_planets, nu_satellites):
+    def L(self, nu_dyn, nu_planets, nu_satellites) -> float:
         # eqns 52-54
         cost = np.linalg.norm(nu_dyn, 1)
         cost += np.sum([nu for nu in nu_planets.values()])
@@ -784,14 +828,17 @@ class SpaceshipPlanner:
         X[:, -1] = self.goal_state.as_ndarray()
         X[2, :] = np.linspace(self.init_state.psi, self.goal_state.psi, self.params.K)
 
-        total_dist = sum([np.linalg.norm(X[0:2, k + 1] - X[0:2, k], 2) for k in range(self.params.K - 1)])
-        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
-        self.min_time = np.sqrt(2 * total_dist / avg_acc)
+        self.min_time = self._get_min_time_piecewise_approx(X)
         p[0] = 2 * self.min_time  # Initial guess for total time
 
         # print("Astar: ", total_dist, min_time)
 
         return X, U, p
+
+    def _get_min_time_piecewise_approx(self, X: np.ndarray):
+        total_dist = sum([np.linalg.norm(X[0:2, k + 1] - X[0:2, k], 2) for k in range(self.params.K - 1)])
+        avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
+        return np.sqrt(2 * total_dist / avg_acc)
 
     def _path_length(self, path):
         l = 0
