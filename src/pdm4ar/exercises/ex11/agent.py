@@ -139,32 +139,32 @@ class SpaceshipAgent(Agent):
 
         Do **not** modify the signature of this method.
         """
-        current_state = sim_obs.players[self.myname].state
-        expected_state = self.state_traj.at_interp(sim_obs.time)
+        # current_state = sim_obs.players[self.myname].state
+        # expected_state = self.state_traj.at_interp(sim_obs.time)
 
         # if np.isclose(current_state.x, self.init_state.x) and np.isclose(current_state.y, self.init_state.y):
         # print("Starting..")
-        for name, satellite in self.satellites.items():
-            planet_name = name.split("/")[0]
-            θ = satellite.omega * float(sim_obs.time) + satellite.tau
-            Δθ = np.array([np.cos(θ), np.sin(θ)])
-            satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
-            satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
-            self.ax.add_patch(satellite_k)
+        # for name, satellite in self.satellites.items():
+        #     planet_name = name.split("/")[0]
+        #     θ = satellite.omega * float(sim_obs.time) + satellite.tau
+        #     Δθ = np.array([np.cos(θ), np.sin(θ)])
+        #     satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
+        #     satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
+        #     self.ax.add_patch(satellite_k)
 
-        self.ax.scatter(current_state.x, current_state.y, c="b", s=512)
-        self.ax.scatter(expected_state.x, expected_state.y, c="r", s=512)
+        # self.ax.scatter(current_state.x, current_state.y, c="b", s=512)
+        # self.ax.scatter(expected_state.x, expected_state.y, c="r", s=512)
 
-        dist2goal = np.linalg.norm(
-            np.array([expected_state.x - self.goal_state.x, expected_state.y - self.goal_state.y]), 2
-        )
+        # dist2goal = np.linalg.norm(
+        #     np.array([expected_state.x - self.goal_state.x, expected_state.y - self.goal_state.y]), 2
+        # )
 
         # if dist2goal < 1.0:
         # print("Close... ", dist2goal)
-        self.fig.savefig(
-            self.savedir + "/mismatch.png",
-            bbox_inches="tight",
-        )
+        # self.fig.savefig(
+        #     self.savedir + "/mismatch.png",
+        #     bbox_inches="tight",
+        # )
 
         #
         # TODO: Implement scheme to replan

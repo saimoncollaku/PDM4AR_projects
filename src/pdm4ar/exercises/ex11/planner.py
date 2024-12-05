@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import enum
 from inspect import cleandoc
 from re import S
 from typing import Union, Sequence
@@ -288,6 +289,8 @@ class SpaceshipPlanner:
         for name in self.satellites:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
+        variables["nu_bounds"] = cvx.Variable(4 * 3 * self.params.K, nonneg=True)
+
         return variables
 
     def _get_problem_parameters(self) -> dict:
@@ -468,6 +471,36 @@ class SpaceshipPlanner:
                     )
                     constraints.append(obs_constraint)
 
+        for k in range(self.params.K):
+            x_ref, y_ref, ψ_ref = self.problem_parameters["X_ref"].value[0:3, k]
+            Δx = self.variables["X"][0, k] - x_ref
+            Δy = self.variables["X"][1, k] - y_ref
+            Δψ = self.variables["X"][2, k] - ψ_ref
+            ẟx = np.array([-Δx, -Δy, Δx, Δy])
+            for i, l in enumerate([self.sp_head, 0, -self.sp_tail]):
+                ẟψ = np.array(
+                    [
+                        l * np.sin(ψ_ref),
+                        -l * np.cos(ψ_ref),
+                        -l * np.sin(ψ_ref),
+                        l * np.cos(ψ_ref),
+                    ]
+                )
+                r = np.array(
+                    [
+                        self.bounds[0] - (x_ref + l * np.cos(ψ_ref)),
+                        self.bounds[1] - (y_ref + l * np.sin(ψ_ref)),
+                        (x_ref + l * np.cos(ψ_ref)) - self.bounds[2],
+                        (y_ref + l * np.sin(ψ_ref)) - self.bounds[3],
+                    ]
+                )
+                for j in range(4):
+                    corner_constraint = (
+                        -ẟx[j] - ẟψ[j] * Δψ
+                        >= r[j] + self.clearance - self.variables["nu_bounds"][j * 3 * k + i * k + k]
+                    )
+                    constraints.append(corner_constraint)
+
         if self.visualize and self.iteration == self.vis_iter:
             self.visualizer.vis_k(
                 self.vis_iter,
@@ -489,6 +522,7 @@ class SpaceshipPlanner:
         objective += self.params.lambda_nu * cvx.norm(self.variables["nu_dyn"], 1)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.planets)
         objective += self.params.lambda_nu * sum(cvx.sum(self.variables["nu_" + str(name)]) for name in self.satellites)
+        objective += self.params.lambda_nu * cvx.sum(self.variables["nu_bounds"])
         objective += 50.0 * cvx.sum(cvx.abs(self.variables["U"][:, 0])) / (2 * self.min_time)
         objective += 10.0 * sum(
             [cvx.norm2(self.variables["X"][0:2, k + 1] - self.variables["X"][0:2, k]) for k in range(self.params.K - 1)]
@@ -605,11 +639,6 @@ class SpaceshipPlanner:
                     dist = np.linalg.norm(pos - param.center, 2)
                     s_p += np.sum(np.maximum((param.radius + self.clearance) - dist, 0))
 
-            # for k in range(self.params.K - 1):
-            #     midpt = 0.5 * X[0:2, k].T + 0.5 * X[0:2, k + 1].T
-            #     dist = np.linalg.norm(midpt - param.center, 2)
-            #     s_p += np.sum(np.maximum((param.radius + self.r_s) - dist, 0))
-
         s = 0
         for name, param in self.satellites.items():
             planet_name = name.split("/")[0]
@@ -623,6 +652,13 @@ class SpaceshipPlanner:
                     s += np.sum(np.maximum((param.radius + self.clearance) - dist, 0))
 
         b = 0
+        for l in [self.sp_head, 0, -self.sp_tail]:
+            pos_x = X[0, :].T + l * np.cos(X[2, :].T)
+            pos_y = X[1, :].T + l * np.sin(X[2, :].T)
+            b += np.sum(np.maximum(self.bounds[0] + self.clearance - pos_x, 0))
+            b += np.sum(np.maximum(self.bounds[1] + self.clearance - pos_y, 0))
+            b += np.sum(np.maximum(pos_x - self.bounds[2] + self.clearance, 0))
+            b += np.sum(np.maximum(pos_y - self.bounds[3] + self.clearance, 0))
         if self.verbose:
             print(
                 "[J]: defect = {}, planet_obs = {}, satellite_obs = {}, boundary_obs = {}".format(
@@ -638,6 +674,9 @@ class SpaceshipPlanner:
         cost += np.sum([nu for nu in nu_planets.values()])
         cost += np.sum([nu for nu in nu_satellites.values()])
 
+        nu_bounds = self.variables["nu_bounds"].value
+        cost += np.sum(nu_bounds)
+
         # print(nu_planets, nu_satellites)
 
         if self.verbose:
@@ -646,7 +685,7 @@ class SpaceshipPlanner:
                     round(np.linalg.norm(nu_dyn, 1), 6),
                     round(np.sum([nu for nu in nu_planets.values()]), 6),
                     round(np.sum([nu for nu in nu_satellites.values()]), 6),
-                    # round(np.sum(nu_bounds), 6),
+                    round(np.sum(nu_bounds), 6),
                 )
             )
 
