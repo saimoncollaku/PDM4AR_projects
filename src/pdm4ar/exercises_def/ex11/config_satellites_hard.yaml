@@ -48,14 +48,34 @@ planets:
         radius: 0.45
       Zun:
         tau: 4.71239
+        tau: 4.71239
         orbit_r: 9.5
         omega: 0.09202
         radius: 0.95
-      Phus:
+      Zun2:
         tau: 4.71239
         orbit_r: 4
         omega: 0.09202
         radius: 0.95
+  Kanem:
+    center: [17.5, 2.5]
+    radius: 3.0
+    satellites:
+      Lereac:
+        tau: 1.5
+        radius: 0.75
+        orbit_r: 7.0
+        omega: 0.10248
+      Oyona:
+        tau: 5.0
+        orbit_r: 4.0
+        omega: 0.22202
+        radius: 0.45
+      Nuz:
+        tau: 3.14
+        orbit_r: 5.5
+        omega: 0.09202
+        radius: 0.6
 
 boundary:
   corners:

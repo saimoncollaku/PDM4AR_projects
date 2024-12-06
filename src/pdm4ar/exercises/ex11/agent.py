@@ -11,12 +11,14 @@ from dg_commons.sim.models.obstacles import StaticObstacle
 from dg_commons.sim.models.obstacles_dyn import DynObstacleState
 from dg_commons.sim.models.spaceship import SpaceshipCommands, SpaceshipState
 from dg_commons.sim.models.spaceship_structures import SpaceshipGeometry, SpaceshipParameters
+from matplotlib import pyplot as plt
 
 from pdm4ar.exercises.ex11.planner import SpaceshipPlanner, SolverParameters
 from pdm4ar.exercises_def.ex11.goal import SpaceshipTarget, DockingTarget
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
 
 import numpy as np
+import os
 
 
 @dataclass(frozen=True)
@@ -25,9 +27,10 @@ class MyAgentParams:
     You can for example define some agent parameters.
     """
 
-    end_tol: float = 0.3
-    max_tol: float = 1.0
+    end_tol: float = 1.0
+    max_tol: float = 1.5
     debug: bool = False
+    visualise: bool = False
     cache: bool = False
 
 
@@ -41,7 +44,8 @@ class SpaceshipAgent(Agent):
     init_state: SpaceshipState
     satellites: dict[PlayerName, SatelliteParams]
     planets: dict[PlayerName, PlanetParams]
-    goal_state: SpaceshipState
+    goal_state: DynObstacleState
+    goal_spaceship_state: SpaceshipState
 
     cmds_plan: DgSampledSequence[SpaceshipCommands]
     state_traj: DgSampledSequence[SpaceshipState]
@@ -52,6 +56,10 @@ class SpaceshipAgent(Agent):
     static_obstacles: Sequence[StaticObstacle]
     sg: SpaceshipGeometry
     sp: SpaceshipParameters
+    dock_points: Sequence[np.ndarray] | None
+
+    replans: int
+    end_replanned: bool
 
     def __init__(
         self,
@@ -112,22 +120,63 @@ class SpaceshipAgent(Agent):
             tolerances=[self.goal.pos_tol, self.goal.vel_tol, self.goal.dir_tol],
         )
 
+        assert isinstance(init_sim_obs.goal, SpaceshipTarget | DockingTarget)
+        self.goal_state = init_sim_obs.goal.target
+        self.goal_spaceship_state = SpaceshipState(
+            self.goal_state.x,
+            self.goal_state.y,
+            self.goal_state.psi,
+            self.goal_state.vx,
+            self.goal_state.vy,
+            self.goal_state.dpsi,
+            0,
+            self.init_state.m,
+        )
+
+        self.dock_points = None
+        if isinstance(init_sim_obs.goal, DockingTarget):
+            self.dock_points = init_sim_obs.goal.get_landing_constraint_points_fix()
         planet_names = "_".join(planet for planet in self.planets.keys())
         satellite_names = "_".join(satellite.split("/")[-1] for satellite in self.satellites.keys())
         planet_satellites = planet_names + "_" + satellite_names
 
         savefile = f"first_trajectory_{planet_satellites}.pkl"
-        if MyAgentParams.cache and os.path.exists(savefile) and False:
+        if MyAgentParams.cache and os.path.exists(savefile):
             print(f"WARNING: Picking up first trajectory from file {savefile}")
             with open(savefile, "rb") as f:
                 self.cmds_plan, self.state_traj, self.tf = pickle.load(f)
         else:
-            self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(self.init_state, self.goal, 0)
+            self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
+                self.init_state, self.goal_state, self.dock_points, 0
+            )
             if MyAgentParams.cache:
                 print("Saving trajectory to file", savefile)
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
+
+        self.replans = 0
         self.end_replanned = False
+
+        if MyAgentParams.visualise:
+            out_folder_path = "../.."
+            self.fig, self.ax = plt.subplots(figsize=(36, 25), dpi=120)
+            self.ax.set_xlim([self.bounds[0], self.bounds[2]])
+            self.ax.set_ylim([self.bounds[1], self.bounds[3]])
+            self.savedir = (
+                f"{out_folder_path}/out/11/"
+                + str(len(self.satellites))
+                + "_"
+                + str(round(self.planets["Namek"].center[1], 2))
+            )
+            for name, planet in self.planets.items():
+                planet = plt.Circle(planet.center, planet.radius, color="green")
+                self.ax.add_patch(planet)
+            if not os.path.exists(self.savedir):
+                os.mkdir(self.savedir)
+            self.fig.savefig(
+                self.savedir + "/mismatch.png",
+                bbox_inches="tight",
+            )
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
@@ -151,14 +200,35 @@ class SpaceshipAgent(Agent):
 
         time = float(sim_obs.time)
 
-        state_deviation = {
-            "x": current_state.x - pred_curr_state.x,
-            "y": current_state.y - pred_curr_state.y,
-            "psi": current_state.psi - pred_curr_state.psi,
-        }
-
         if MyAgentParams.debug:
-            print(f"In simulation time: {time} diff: {diff.round(4)}, state_deviation: {state_deviation}")
+            state_deviation = {
+                "x": current_state.x - pred_curr_state.x,
+                "y": current_state.y - pred_curr_state.y,
+                "psi": current_state.psi - pred_curr_state.psi,
+            }
+            state_deviation = {k: round(val, 5) for k, val in state_deviation.items()}
+            print("Sim time: {:.2f} | diff: {:.4f}".format(time, diff) + f" | state_deviation: {state_deviation}")
+
+        if MyAgentParams.visualise:
+            for name, satellite in self.satellites.items():
+                planet_name = name.split("/")[0]
+                θ = satellite.omega * float(sim_obs.time) + satellite.tau
+                Δθ = np.array([np.cos(θ), np.sin(θ)])
+                satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
+                satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
+                self.ax.add_patch(satellite_k)
+
+            self.ax.scatter(current_state.x, current_state.y, c="b", s=512)
+            self.ax.scatter(pred_curr_state.x, pred_curr_state.y, c="r", s=512)
+            dist2goal = np.linalg.norm(
+                np.array([pred_curr_state.x - self.goal_state.x, pred_curr_state.y - self.goal_state.y]), 2
+            )
+
+            if dist2goal < 1.0:
+                self.fig.savefig(
+                    self.savedir + "/mismatch.png",
+                    bbox_inches="tight",
+                )
 
         # dont_plan_last_moment = time < (self.tf - 1.0)
         # if diff > MyAgentParams.end_tol:
@@ -175,16 +245,16 @@ class SpaceshipAgent(Agent):
             prev_cmds = np.array([self.cmds_plan.at_interp(t).as_ndarray().tolist() for t in timestamps]).T
             timestamps = np.expand_dims(np.linspace(0, 1, SolverParameters.K), axis=1)
             prev_states = np.squeeze(
-                (1 - timestamps) * current_state.as_ndarray() + timestamps * self.goal_state.as_ndarray()
+                (1 - timestamps) * current_state.as_ndarray() + timestamps * self.goal_spaceship_state.as_ndarray()
             ).T
             prev_tf = np.array(self.tf - time)
 
             assert prev_states.shape == (8, SolverParameters.K)
             assert prev_cmds.shape == (2, SolverParameters.K)
-            print("state init trajectory to follow:")
-            print(prev_states[0:2, :].round(6))
+            # print("state init trajectory to follow:")
+            # print(prev_states[0:2, :].round(6))
             self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
-                current_state, self.goal, time, prev_states, prev_cmds, prev_tf
+                current_state, self.goal_state, self.dock_points, time, prev_states, prev_cmds, prev_tf
             )
 
         # ZeroOrderHold
