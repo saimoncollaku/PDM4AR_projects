@@ -128,10 +128,10 @@ class SpaceshipPlanner:
         self.problem_parameters = self._get_problem_parameters()
 
         self.verbose = False
-        self.visualize = False
+        self.visualize = True
 
         self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
-        self.vis_per_iters = 10
+        self.vis_per_iters = 5
         self.vis_iter = -1
 
     def compute_trajectory(
@@ -184,7 +184,7 @@ class SpaceshipPlanner:
         if init_X is not None and init_U is not None and init_p is not None:
             if self.verbose:
                 print("Picked up supplied init X, U, p values")
-            if init_p[0] < 0: # underestimated time of reaching
+            if init_p[0] < 0:  # underestimated time of reaching
                 init_p[0] = self._get_min_time_piecewise_approx(self.X_bar)
             self.X_bar, self.U_bar, self.p_bar = init_X, init_U, init_p
             self.min_time = init_p * 2
@@ -318,6 +318,7 @@ class SpaceshipPlanner:
             variables["nu_" + str(name)] = cvx.Variable(self.params.K, nonneg=True)
 
         variables["nu_bounds"] = cvx.Variable(4 * 3 * self.params.K, nonneg=True)
+        variables["kappa_dock"] = cvx.Variable(1, nonneg=True)
 
         return variables
 
@@ -348,9 +349,9 @@ class SpaceshipPlanner:
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
             # self.variables["X"][2:5, -1] == self.problem_parameters["goal_state"][2:5],
-            cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2]) <= 0.2 * self.pos_tol,
-            cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= self.dir_tol,
-            cvx.norm2(self.variables["X"][3:5, -1] - self.problem_parameters["goal_state"][3:5]) <= self.vel_tol,
+            # cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2]) <= 0.2 * self.pos_tol,
+            self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2] == 0,
+            self.variables["X"][3:5, -1] - self.problem_parameters["goal_state"][3:5] == 0,
             # self.variables["p"] >= 0,
             # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
@@ -388,17 +389,31 @@ class SpaceshipPlanner:
         # constraints.extend(docking_constraints)
 
         # put spaceship tail point at goal, avoids collision.
-        l = self.sp_tail - 0.5 * self.dock_offset if self.docking_goal else 0
-        # goal_x_constraint = (
-        #     self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
-        #     == self.problem_parameters["goal_state"][0]
-        # )
-        # goal_y_constraint = (
-        #     self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
-        #     == self.problem_parameters["goal_state"][1]
-        # )
-        # constraints.append(goal_x_constraint)
-        # constraints.append(goal_y_constraint)
+        if self.docking_goal:
+            constraints.append(self.variables["kappa_dock"] <= 0.8)
+            constraints.append(self.variables["kappa_dock"] >= 0.4)
+            l = self.sp_tail - self.variables["kappa_dock"] * self.dock_offset
+            dock_x_constraint = (
+                self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
+                == self.problem_parameters["goal_state"][0]
+            )
+            dock_y_constraint = (
+                self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
+                == self.problem_parameters["goal_state"][1]
+            )
+            goal_x_constraint = self.variables["X"][0, -1] - self.problem_parameters["goal_state"][
+                0
+            ] >= 0.5 * self.pos_tol * np.cos(self.problem_parameters["goal_state"][2].value)
+            goal_y_constraint = self.variables["X"][1, -1] - self.problem_parameters["goal_state"][
+                1
+            ] >= 0.5 * self.pos_tol * np.sin(self.problem_parameters["goal_state"][2].value)
+            constraints.append(dock_x_constraint)
+            constraints.append(dock_y_constraint)
+            constraints.append(goal_x_constraint)
+            constraints.append(goal_y_constraint)
+        else:
+            goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
+            constraints.append(goal_xy_constraint)
 
         # Boundary constraints on state,
         # see Constraints in writeup,
@@ -606,7 +621,7 @@ class SpaceshipPlanner:
         self.j_values[self.iteration] = actual_cost
         self.l_values[self.iteration] = linearized_cost
         print(
-            "[{}] {}, t_f = {:.6f} | J = {:.6f}, L = {:.6f} | J - L = {:.6f}".format(
+            "[{:2d}] {}, t_f = {:.6f} | J = {:.6f}, L = {:.6f} | J - L = {:.6f}".format(
                 self.iteration,
                 self.problem.status,
                 self.variables["p"].value[0],
