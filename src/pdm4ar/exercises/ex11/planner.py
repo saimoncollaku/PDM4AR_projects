@@ -150,6 +150,7 @@ class SpaceshipPlanner:
         self.j_values = np.zeros((self.params.max_iterations))
         self.l_values = np.zeros((self.params.max_iterations))
         self.iteration = 0
+        self.num_constancy_iterations = 0
 
         self.init_state = init_state
         self.goal_state = SpaceshipState(
@@ -631,19 +632,17 @@ class SpaceshipPlanner:
             )
         )
 
-        actual_cost_small: bool = actual_cost < 10 * self.params.stop_crit
+        actual_cost_small: bool = actual_cost < self.params.stop_crit
         difference_between_costs_small = actual_cost - linearized_cost < self.params.stop_crit
-        if self.iteration > self.params.max_constancy_iterations:
-            last_js = self.j_values[self.iteration - self.params.max_constancy_iterations : self.iteration]
-            last_ls = self.l_values[self.iteration - self.params.max_constancy_iterations : self.iteration]
-            j_value_mean = np.mean(last_js) * np.ones(5)
-            l_value_mean = np.mean(last_ls) * np.ones(5)
-            constancy: bool = bool(np.isclose(j_value_mean, last_js).all() and np.isclose(l_value_mean, last_ls).all())
-            # constancy = np.allclose(last_js, last_ls)
+        if difference_between_costs_small and not actual_cost_small:
+            self.num_constancy_iterations += 1
         else:
-            constancy = False
+            self.num_constancy_iterations = 0
 
-        return (difference_between_costs_small and actual_cost_small) or constancy
+        if self.num_constancy_iterations == self.params.max_constancy_iterations:
+            return True
+
+        return difference_between_costs_small and actual_cost_small
 
     def _update_trust_region(self):
         """
