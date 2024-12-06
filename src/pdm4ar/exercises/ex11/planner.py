@@ -1,24 +1,27 @@
+import os
+import heapq
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Union, Sequence
 
 import cvxpy as cvx
 from dg_commons import PlayerName
 from dg_commons.seq import DgSampledSequence
 from dg_commons.sim.models.obstacles import StaticObstacle
-from dg_commons.sim.models.obstacles_dyn import DynObstacleState
+
+# from dg_commons.sim.models.obstacles_dyn import DynObstacleState
 from dg_commons.sim.models.spaceship import SpaceshipCommands, SpaceshipState
 from dg_commons.sim.models.spaceship_structures import (
     SpaceshipGeometry,
     SpaceshipParameters,
 )
 
-import os
-import heapq
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 from pdm4ar.exercises.ex11.discretization import *
 from pdm4ar.exercises.ex11.visualization import Visualizer
+from pdm4ar.exercises_def.ex11.goal import DockingTarget, SpaceshipTarget
 from pdm4ar.exercises_def.ex11.utils_params import PlanetParams, SatelliteParams
 
 
@@ -65,6 +68,9 @@ class SpaceshipPlanner:
     sg: SpaceshipGeometry
     sp: SpaceshipParameters
     params: SolverParameters
+    init_state: SpaceshipState
+    goal_state: SpaceshipState
+    goal: SpaceshipTarget | DockingTarget
 
     # Simpy variables
     x: spy.Matrix
@@ -141,7 +147,7 @@ class SpaceshipPlanner:
         init_p: np.ndarray | None = None,
     ) -> tuple[DgSampledSequence[SpaceshipCommands], DgSampledSequence[SpaceshipState], float]:
         """
-        Compute a trajectory from init_state to goal_state.
+        Compute a trajectory from init_state to goal_state
         """
         self.j_values = np.zeros((self.params.max_iterations))
         self.l_values = np.zeros((self.params.max_iterations))
@@ -149,16 +155,20 @@ class SpaceshipPlanner:
         self.num_constancy_iterations = 0
 
         self.init_state = init_state
+        target = goal.target
+        self.iteration = 0
         self.goal_state = SpaceshipState(
-            goal_state.x,
-            goal_state.y,
-            goal_state.psi,
-            goal_state.vx,
-            goal_state.vy,
-            goal_state.dpsi,
+            target.x,
+            target.y,
+            target.psi,
+            target.vx,
+            target.vy,
+            target.dpsi,
             0,
             init_state.m,
         )
+        self.goal = goal
+        self.init_time = init_time
 
         self.dock_points = dock_points
         self.docking_goal = False
@@ -176,7 +186,6 @@ class SpaceshipPlanner:
 
         self.problem_parameters["eta"].value = self.params.tr_radius
 
-        # set reference trajectory X_bar, U_bar, p_bar
         # set reference trajectory X_bar, U_bar, p_bar
         if init_X is not None and init_U is not None and init_p is not None:
             if self.verbose:
@@ -279,10 +288,12 @@ class SpaceshipPlanner:
         Define initial guess for SCvx.
         """
         K = self.params.K
+        # Page 27
+        # "However, the algorithms do require the guess to be feasible with respect to the convex path constraints"
+        # this guess is straight line interpolation
 
-        X = np.zeros((self.spaceship.n_x, K))
         U = np.zeros((self.spaceship.n_u, K))
-        p = np.ones((self.spaceship.n_p))
+        p = np.zeros((self.spaceship.n_p))
 
         X[0, :] = np.linspace(self.init_state.x, self.goal_state.x, K)
         X[1, :] = np.linspace(self.init_state.y, self.goal_state.y, K)
@@ -366,6 +377,7 @@ class SpaceshipPlanner:
             # self.variables["p"] >= 0,
             # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
             # ]
+
             # boundary_constraints = [
             self.variables["X"][0, :] >= self.bounds[0],
             self.variables["X"][1, :] >= self.bounds[1],
@@ -378,6 +390,7 @@ class SpaceshipPlanner:
             # constraints.extend(boundary_constraints)
             # control_constraints = [
             self.variables["U"][:, 0] == self.problem_parameters["U_ref"][:, 0],
+
             self.variables["U"][:, -1] == 0,
             self.variables["U"][0, :] >= self.spaceship.sp.thrust_limits[0],
             self.variables["U"][0, :] <= self.spaceship.sp.thrust_limits[1],

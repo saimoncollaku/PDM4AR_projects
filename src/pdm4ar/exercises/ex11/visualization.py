@@ -3,7 +3,6 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import os
 
-
 class Visualizer:
 
     def __init__(self, bounds, sp, planets, satellites, params):

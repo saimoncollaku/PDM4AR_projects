@@ -1,6 +1,7 @@
 import pickle
 from dataclasses import dataclass
 from typing import Sequence
+import os
 
 from dg_commons import DgSampledSequence, PlayerName
 from dg_commons.sim import SimObservations, InitSimObservations
@@ -28,9 +29,9 @@ class MyAgentParams:
 
     end_tol: float = 1.0
     max_tol: float = 1.5
-    debug: bool = True
+    debug: bool = False
     visualise: bool = False
-    cache: bool = True
+    cache: bool = False
 
 
 class SpaceshipAgent(Agent):
@@ -48,6 +49,7 @@ class SpaceshipAgent(Agent):
 
     cmds_plan: DgSampledSequence[SpaceshipCommands]
     state_traj: DgSampledSequence[SpaceshipState]
+    tf: float
     myname: PlayerName
     planner: SpaceshipPlanner
     goal: PlanningGoal
@@ -73,6 +75,7 @@ class SpaceshipAgent(Agent):
         self.init_state = init_state
         self.satellites = satellites
         self.planets = planets
+        self.replans = 0
 
     def on_episode_init(self, init_sim_obs: InitSimObservations):
         """
@@ -81,6 +84,7 @@ class SpaceshipAgent(Agent):
 
         Do **not** modify the signature of this method.
         """
+        print("Player initialised...")
         self.myname = init_sim_obs.my_name
         assert init_sim_obs.dg_scenario is not None
         assert isinstance(init_sim_obs.model_geometry, SpaceshipGeometry)
@@ -88,19 +92,32 @@ class SpaceshipAgent(Agent):
         assert isinstance(init_sim_obs.goal, SpaceshipTarget | DockingTarget)
         self.sg = init_sim_obs.model_geometry
         self.sp = init_sim_obs.model_params
+        self.goal = init_sim_obs.goal
+        target = self.goal.target
+        self.goal_state = SpaceshipState(
+            target.x,
+            target.y,
+            target.psi,
+            target.vx,
+            target.vy,
+            target.dpsi,
+            0,
+            self.init_state.m,
+        )
 
         self.bounds = None
         for obs in init_sim_obs.dg_scenario.static_obstacles:
             if obs.shape.geom_type == "LineString":
                 self.bounds = obs.shape.bounds
         assert self.bounds is not None
+
         self.planner = SpaceshipPlanner(
             planets=self.planets,
             satellites=self.satellites,
             sg=self.sg,
             sp=self.sp,
             bounds=self.bounds,
-            tolerances=[init_sim_obs.goal.pos_tol, init_sim_obs.goal.vel_tol, init_sim_obs.goal.dir_tol],
+            tolerances=[self.goal.pos_tol, self.goal.vel_tol, self.goal.dir_tol],
         )
 
         assert isinstance(init_sim_obs.goal, SpaceshipTarget | DockingTarget)
@@ -119,7 +136,6 @@ class SpaceshipAgent(Agent):
         self.dock_points = None
         if isinstance(init_sim_obs.goal, DockingTarget):
             self.dock_points = init_sim_obs.goal.get_landing_constraint_points_fix()
-
         planet_names = "_".join(planet for planet in self.planets.keys())
         satellite_names = "_".join(satellite.split("/")[-1] for satellite in self.satellites.keys())
         planet_satellites = planet_names + "_" + satellite_names
@@ -137,6 +153,7 @@ class SpaceshipAgent(Agent):
                 print("Saving trajectory to file", savefile)
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
+
         self.replans = 0
         self.end_replanned = False
 
@@ -163,15 +180,19 @@ class SpaceshipAgent(Agent):
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
-        This method is called by the simulator at every simulation time step. (0.1 sec)
-        We suggest to perform two tasks here:
-         - Track the computed trajectory (open or closed loop)
-         - Plan a new trajectory if necessary
-         (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
+                        This method is called by the simulator at every simulation time step. (0.1 sec)
+                        We suggest to perform two tasks here:
+                         - Track the computed trajectory (open or closed loop)
+                         - Plan a new trajectory if necessary
+                         (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
+        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
+        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
 
-
-        Do **not** modify the signature of this method.
+        In simulation time: 14.7, pred_state: (3.7848116057044248, 9.757268463407701), actual_state: (3.520021919520757, 9.81561763531205)
+        In simulation time: 14.8, pred_state: (3.9638488268086696, 9.743704770542985), actual_state: (3.6696539289476737, 9.821714885495977)
+                        Do **not** modify the signature of this method.
         """
+        assert isinstance(self.goal, SpaceshipTarget | DockingTarget)
         current_state = sim_obs.players[self.myname].state
         pred_curr_state = self.state_traj.at_interp(sim_obs.time)
         assert isinstance(current_state, SpaceshipState)

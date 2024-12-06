@@ -128,10 +128,10 @@ class DockingTarget(SpaceshipTarget):
         In particular:
                 -A: a point with offset of 0.1 (closer to the landing base)
                 from the pinpoint goal position.
-                -B: end of arm 1.
-                -C: end of arm 2.
-                -A1: starting point of landing base.
-                -A2: ending point of landing base.
+                -B: end of arm 1 + offset.
+                -C: end of arm 2 + offset.
+                -A1: point aligned with the starting point of the landing base.
+                -A2: point aligned with the ending point of landing base.
                 -p: (angular aperture of the dock)/2..
         """
         offset_y = 0.3
