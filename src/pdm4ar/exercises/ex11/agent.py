@@ -84,7 +84,6 @@ class SpaceshipAgent(Agent):
 
         Do **not** modify the signature of this method.
         """
-        print("Player initialised...")
         self.myname = init_sim_obs.my_name
         assert init_sim_obs.dg_scenario is not None
         assert isinstance(init_sim_obs.model_geometry, SpaceshipGeometry)
@@ -154,8 +153,8 @@ class SpaceshipAgent(Agent):
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
 
-        self.replans = 0
-        self.end_replanned = False
+        self.replans = 10
+        self.end_replanned = True
 
         if MyAgentParams.visualise:
             out_folder_path = "../.."

@@ -1,15 +1,13 @@
 import os
 import heapq
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Union, Sequence
 
 import cvxpy as cvx
 from dg_commons import PlayerName
 from dg_commons.seq import DgSampledSequence
-from dg_commons.sim.models.obstacles import StaticObstacle
 
-# from dg_commons.sim.models.obstacles_dyn import DynObstacleState
+from dg_commons.sim.models.obstacles_dyn import DynObstacleState
 from dg_commons.sim.models.spaceship import SpaceshipCommands, SpaceshipState
 from dg_commons.sim.models.spaceship_structures import (
     SpaceshipGeometry,
@@ -155,19 +153,18 @@ class SpaceshipPlanner:
         self.num_constancy_iterations = 0
 
         self.init_state = init_state
-        target = goal.target
-        self.iteration = 0
         self.goal_state = SpaceshipState(
-            target.x,
-            target.y,
-            target.psi,
-            target.vx,
-            target.vy,
-            target.dpsi,
+            goal_state.x,
+            goal_state.y,
+            goal_state.psi,
+            goal_state.vx,
+            goal_state.vy,
+            goal_state.dpsi,
             0,
             init_state.m,
         )
-        self.goal = goal
+
+        self.iteration = 0
         self.init_time = init_time
 
         self.dock_points = dock_points
@@ -184,8 +181,6 @@ class SpaceshipPlanner:
             print("Start: ", self.init_state)
             print("Goal: ", self.goal_state)
 
-        self.problem_parameters["eta"].value = self.params.tr_radius
-
         # set reference trajectory X_bar, U_bar, p_bar
         if init_X is not None and init_U is not None and init_p is not None:
             if self.verbose:
@@ -195,28 +190,20 @@ class SpaceshipPlanner:
             self.X_bar, self.U_bar, self.p_bar = init_X, init_U, init_p
             self.min_time = init_p * 2
         else:
-            self.p_bar = p
-            if self.visualize:
-                self.plot_trajectory(
-                    self.X_bar,
-                    self.init_state.as_ndarray()[0:2],
-                    self.goal_state.as_ndarray()[0:2],
-                    title="Optimized Trajectory with A* Initial Guess",
-                )
             self.X_bar, self.U_bar, p = self.initial_guess_astar()
             if p is None:
                 self.X_bar, self.U_bar, self.p_bar = self.initial_guess()
             else:
                 self.p_bar = p
                 if self.visualize:
-                  self.plot_trajectory(
-                      self.X_bar,
-                      self.init_state.as_ndarray()[0:2],
-                      self.goal_state.as_ndarray()[0:2],
-                      title="Optimized Trajectory with A* Initial Guess",
-                  )
-                  
-        self.init_time = init_time
+                    self.plot_trajectory(
+                        self.X_bar,
+                        self.init_state.as_ndarray()[0:2],
+                        self.goal_state.as_ndarray()[0:2],
+                        title="Optimized Trajectory with A* Initial Guess",
+                    )
+
+        self.problem_parameters["eta"].value = self.params.tr_radius
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
@@ -292,6 +279,7 @@ class SpaceshipPlanner:
         # "However, the algorithms do require the guess to be feasible with respect to the convex path constraints"
         # this guess is straight line interpolation
 
+        X = np.zeros((self.spaceship.n_x, K))
         U = np.zeros((self.spaceship.n_u, K))
         p = np.zeros((self.spaceship.n_p))
 
@@ -315,13 +303,6 @@ class SpaceshipPlanner:
         )
         avg_acc = self.sp.thrust_limits[1] / self.sp.m_v
         return np.sqrt(2 * total_dist / avg_acc)
-
-    def _set_goal(self):
-        """
-        Sets goal for SCvx.
-        """
-        self.goal = cvx.Parameter((6, 1))
-        pass
 
     def _get_variables(self) -> dict:
         """
@@ -370,14 +351,8 @@ class SpaceshipPlanner:
         """
         constraints = [
             self.variables["X"][:, 0] == self.problem_parameters["init_state"],
-            # self.variables["X"][2:5, -1] == self.problem_parameters["goal_state"][2:5],
-            # cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2]) <= 0.2 * self.pos_tol,
             self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2] == 0,
             self.variables["X"][3:5, -1] - self.problem_parameters["goal_state"][3:5] == 0,
-            # self.variables["p"] >= 0,
-            # self.variables["X"][0:5, -2] == self.problem_parameters["goal_state"][0:5],
-            # ]
-
             # boundary_constraints = [
             self.variables["X"][0, :] >= self.bounds[0],
             self.variables["X"][1, :] >= self.bounds[1],
@@ -387,30 +362,15 @@ class SpaceshipPlanner:
             self.variables["X"][6, :] <= self.spaceship.sp.delta_limits[1],
             self.variables["X"][7, :] >= self.spaceship.sp.m_v,
             # ]
-            # constraints.extend(boundary_constraints)
             # control_constraints = [
             self.variables["U"][:, 0] == self.problem_parameters["U_ref"][:, 0],
-
             self.variables["U"][:, -1] == 0,
             self.variables["U"][0, :] >= self.spaceship.sp.thrust_limits[0],
             self.variables["U"][0, :] <= self.spaceship.sp.thrust_limits[1],
             self.variables["U"][1, :] >= self.spaceship.sp.ddelta_limits[0],
             self.variables["U"][1, :] <= self.spaceship.sp.ddelta_limits[1],
             # ]
-            # constraints.extend(control_constraints)
-            # docking_constraints = [
-            # cvx.norm2(self.variables["X"][0, -1] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            # cvx.norm2(self.variables["X"][1, -1] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            # cvx.norm2(self.variables["X"][2, -1] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            # cvx.norm2(self.variables["X"][3, -1] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            # cvx.norm2(self.variables["X"][4, -1] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
-            # cvx.norm2(self.variables["X"][0, -2] - self.problem_parameters["goal_state"][0]) <= np.sqrt(self.pos_tol),
-            # cvx.norm2(self.variables["X"][1, -2] - self.problem_parameters["goal_state"][1]) <= np.sqrt(self.pos_tol),
-            # cvx.norm2(self.variables["X"][2, -2] - self.problem_parameters["goal_state"][2]) <= np.sqrt(self.dir_tol),
-            # cvx.norm2(self.variables["X"][3, -2] - self.problem_parameters["goal_state"][3]) <= np.sqrt(self.vel_tol),
-            # cvx.norm2(self.variables["X"][4, -2] - self.problem_parameters["goal_state"][4]) <= np.sqrt(self.vel_tol),
         ]
-        # constraints.extend(docking_constraints)
 
         # put spaceship tail point at goal, avoids collision.
         if self.docking_goal:
@@ -440,10 +400,6 @@ class SpaceshipPlanner:
         else:
             goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
             constraints.append(goal_xy_constraint)
-
-        # Boundary constraints on state,
-        # see Constraints in writeup,
-        # dynamics constraints (Eq55),
 
         for k in range(self.params.K - 1):
             dyn_constraint = (
