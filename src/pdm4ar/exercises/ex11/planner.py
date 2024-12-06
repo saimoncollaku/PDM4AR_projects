@@ -184,6 +184,8 @@ class SpaceshipPlanner:
         if init_X is not None and init_U is not None and init_p is not None:
             if self.verbose:
                 print("Picked up supplied init X, U, p values")
+            if init_p[0] < 0: # underestimated time of reaching
+                init_p[0] = self._get_min_time_piecewise_approx(self.X_bar)
             self.X_bar, self.U_bar, self.p_bar = init_X, init_U, init_p
             self.min_time = init_p * 2
         else:
