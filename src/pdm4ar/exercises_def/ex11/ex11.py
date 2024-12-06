@@ -83,8 +83,8 @@ def get_exercise11():
         # "config_satellites_extreme_easy.yaml",
     ]
 
-    open(f"../../out/11/old_results.txt", "w+").write(open(f"../../out/11/results.txt", "r").read())
-    open(f"../../out/11/results.txt", "w+").close()
+    # open(f"../../out/11/old_results.txt", "w+").write(open(f"../../out/11/results.txt", "r").read())
+    # open(f"../../out/11/results.txt", "w+").close()
     test_values: List[SimContext] = []
     for c in configs:
         config_file = config_dir / c
