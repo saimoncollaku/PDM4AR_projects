@@ -1,10 +1,6 @@
 from dataclasses import dataclass, field
-import enum
-from inspect import cleandoc
-from re import S
 from typing import Union, Sequence
 
-from click import clear
 import cvxpy as cvx
 from dg_commons import PlayerName
 from dg_commons.seq import DgSampledSequence
@@ -173,7 +169,12 @@ class SpaceshipPlanner:
         else:
             self.p_bar = p
             if self.visualize:
-                self.plot_trajectory(self.X_bar, title="Optimized Trajectory with A* Initial Guess")
+                self.plot_trajectory(
+                    self.X_bar,
+                    self.init_state.as_ndarray()[0:2],
+                    self.goal_state.as_ndarray()[0:2],
+                    title="Optimized Trajectory with A* Initial Guess",
+                )
 
         while self.iteration < self.params.max_iterations:
             self._convexification()
@@ -221,6 +222,7 @@ class SpaceshipPlanner:
                     {name: self.clearance * np.ones(self.params.K) for name in self.planets},
                     {name: self.clearance * np.ones(self.params.K) for name in self.satellites},
                     dock_points,
+                    self.goal_state.as_ndarray()[0:2],
                 )
 
             self._update_trust_region()
@@ -371,16 +373,18 @@ class SpaceshipPlanner:
                 self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
                 == self.problem_parameters["goal_state"][1]
             )
-            goal_x_constraint = self.variables["X"][0, -1] - self.problem_parameters["goal_state"][
-                0
-            ] >= 0.5 * self.pos_tol * np.cos(self.problem_parameters["goal_state"][2].value)
-            goal_y_constraint = self.variables["X"][1, -1] - self.problem_parameters["goal_state"][
-                1
-            ] >= 0.5 * self.pos_tol * np.sin(self.problem_parameters["goal_state"][2].value)
+            goal_xy_constraint = (
+                cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
+                <= 0.5 * self.pos_tol
+            )
+            # goal_y_constraint = self.variables["X"][1, -1] - self.problem_parameters["goal_state"][
+            #     1
+            # ] >= 0.5 * self.pos_tol * np.sin(self.problem_parameters["goal_state"][2].value)
             constraints.append(dock_x_constraint)
             constraints.append(dock_y_constraint)
-            constraints.append(goal_x_constraint)
-            constraints.append(goal_y_constraint)
+            # constraints.append(goal_x_constraint)
+            # constraints.append(goal_y_constraint)
+            constraints.append(goal_xy_constraint)
         else:
             goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
             constraints.append(goal_xy_constraint)
@@ -746,10 +750,10 @@ class SpaceshipPlanner:
             reverse=True,
         ):
             # Extract world bounds from self.bounds
-            x_min = self.bounds[0] + clearance
-            y_min = self.bounds[1] + clearance
-            x_max = self.bounds[2] - clearance
-            y_max = self.bounds[3] - clearance
+            x_min = self.bounds[0]
+            y_min = self.bounds[1]
+            x_max = self.bounds[2]
+            y_max = self.bounds[3]
             grid_resolution = 0.1  # Size of each grid cell
             grid_size_x = int((x_max - x_min) / grid_resolution)
             grid_size_y = int((y_max - y_min) / grid_resolution)
@@ -787,16 +791,19 @@ class SpaceshipPlanner:
         waypoints = [self._to_continuous_coords(p[0], p[1], grid_resolution, x_min, y_min) for p in best_path]
         waypoints = np.array(waypoints).T  # Convert to (2, n) format
 
+        waypoints[:, 0] = self.init_state.as_ndarray()[0:2]
+        waypoints[:, -1] = self.goal_state.as_ndarray()[0:2]
+
         t = np.linspace(0, 1, len(waypoints[0]))
         for i in range(self.params.K):
-            X[0, i] = np.interp(i / self.params.K, t, waypoints[0])
-            X[1, i] = np.interp(i / self.params.K, t, waypoints[1])
+            X[0, i] = np.interp(i / (self.params.K - 1), t, waypoints[0])
+            X[1, i] = np.interp(i / (self.params.K - 1), t, waypoints[1])
 
         X[7, :] = self.init_state.m  # Assume constant mass
 
         # must have consistency, otherwise mismatch -> drift -> crash
-        X[:, 0] = self.init_state.as_ndarray()
-        X[:, -1] = self.goal_state.as_ndarray()
+        # X[:, 0] = self.init_state.as_ndarray()
+        # X[:, -1] = self.goal_state.as_ndarray()
         X[2, :] = np.linspace(self.init_state.psi, self.goal_state.psi, self.params.K)
 
         total_dist = sum([np.linalg.norm(X[0:2, k + 1] - X[0:2, k], 2) for k in range(self.params.K - 1)])
@@ -911,7 +918,7 @@ class SpaceshipPlanner:
 
         return None  # No path found
 
-    def plot_trajectory(self, X, title="Trajectory Visualization", save_path=None):
+    def plot_trajectory(self, X, init_state, goal_state, title="Trajectory Visualization", save_path=None):
         """
         Plot the trajectory, planets, and world bounds, and optionally save the plot to a file.
 
@@ -984,6 +991,9 @@ class SpaceshipPlanner:
         ax.set_ylabel("Y-coordinate")
         ax.set_title(title)
         ax.legend()
+
+        ax.scatter(init_state[0], init_state[1], s=64, marker="*")
+        ax.scatter(goal_state[0], goal_state[1], s=64, marker="*")
 
         plt.grid()
 

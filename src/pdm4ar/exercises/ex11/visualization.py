@@ -45,7 +45,7 @@ class Visualizer:
             (self.sg.l_r) ** 2 + self.sg.w_half**2,
         )
 
-    def vis_iter(self, iteration, X, U, p, kappa_planets, kappa_sats, dock_points):
+    def vis_iter(self, iteration, X, U, p, kappa_planets, kappa_sats, dock_points, goal):
         fig, ax = plt.subplots(figsize=(36, 25), dpi=120)
         ax.set_xlim([self.bounds[0], self.bounds[2]])
         ax.set_ylim([self.bounds[1], self.bounds[3]])
@@ -114,6 +114,8 @@ class Visualizer:
             X[0, :],
             X[1, :],
         )
+        ax.scatter(goal[0], goal[1], s=2048, marker="D")
+        self.global_ax.scatter(goal[0], goal[1], s=2048, marker="D")
         for k in range(self.params.K):
             ax.arrow(
                 X[0, k] - self.sg.l_r * np.cos(X[2, k]),
