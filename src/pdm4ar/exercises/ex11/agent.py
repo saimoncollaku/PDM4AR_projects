@@ -179,17 +179,12 @@ class SpaceshipAgent(Agent):
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
-                        This method is called by the simulator at every simulation time step. (0.1 sec)
-                        We suggest to perform two tasks here:
-                         - Track the computed trajectory (open or closed loop)
-                         - Plan a new trajectory if necessary
-                         (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
-        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
-        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
-
-        In simulation time: 14.7, pred_state: (3.7848116057044248, 9.757268463407701), actual_state: (3.520021919520757, 9.81561763531205)
-        In simulation time: 14.8, pred_state: (3.9638488268086696, 9.743704770542985), actual_state: (3.6696539289476737, 9.821714885495977)
-                        Do **not** modify the signature of this method.
+        This method is called by the simulator at every simulation time step. (0.1 sec)
+        We suggest to perform two tasks here:
+            - Track the computed trajectory (open or closed loop)
+            - Plan a new trajectory if necessary
+            (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
+        Do **not** modify the signature of this method.
         """
         assert isinstance(self.goal, SpaceshipTarget | DockingTarget)
         current_state = sim_obs.players[self.myname].state
