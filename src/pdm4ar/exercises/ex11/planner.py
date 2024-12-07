@@ -380,21 +380,21 @@ class SpaceshipPlanner:
 
         # put spaceship tail point at goal, avoids collision.
         if self.docking_goal:
-            goal_state = self.goal_state.as_ndarray()[0:2]
-            dock_start, dock_end = self.dock_points[3].copy(), self.dock_points[4].copy()
-            dock_base_vec = goal_state - (dock_start + dock_end) / 2
-            dock_base_unit_vec = dock_base_vec / np.linalg.norm(dock_base_vec, ord=2)
-            dock_start += dock_base_unit_vec * self.length_threshold
-            dock_end += dock_base_unit_vec * self.length_threshold
-            # for k in range(self.NUM_DISCRETISATION_STEPS - 7, self.NUM_DISCRETISATION_STEPS):
-            #     tail_x, tail_y = self.variables["X"][0, k] - self.sp_tail * cvx.co
-            dock_constraints = [
-                self._sign_on_line_side(goal_state, dock_start, dock_end)
-                * self._sign_on_line_side(self.variables["X"][0:2, k], dock_start, dock_end)
-                >= 0
-                for k in range(self.params.K - 7, self.params.K)
-            ]
-            constraints.extend(dock_constraints)
+            # goal_state = self.goal_state.as_ndarray()[0:2]
+            # dock_start, dock_end = self.dock_points[3].copy(), self.dock_points[4].copy()
+            # dock_base_vec = goal_state - (dock_start + dock_end) / 2
+            # dock_base_unit_vec = dock_base_vec / np.linalg.norm(dock_base_vec, ord=2)
+            # dock_start += dock_base_unit_vec * self.length_threshold
+            # dock_end += dock_base_unit_vec * self.length_threshold
+            # # for k in range(self.NUM_DISCRETISATION_STEPS - 7, self.NUM_DISCRETISATION_STEPS):
+            # #     tail_x, tail_y = self.variables["X"][0, k] - self.sp_tail * cvx.co
+            # dock_constraints = [
+            #     self._sign_on_line_side(goal_state, dock_start, dock_end)
+            #     * self._sign_on_line_side(self.variables["X"][0:2, k], dock_start, dock_end)
+            #     >= 0
+            #     for k in range(self.params.K - 7, self.params.K)
+            # ]
+            # constraints.extend(dock_constraints)
 
             goal_xy_constraint = (
                 cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
@@ -409,7 +409,7 @@ class SpaceshipPlanner:
             # constraints.append(dock_y_constraint)
             # constraints.append(goal_x_constraint)
             # constraints.append(goal_y_constraint)
-            # constraints += self._get_dock_constraints()
+            constraints += self._get_dock_constraints()
         else:
             goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
             constraints.append(goal_xy_constraint)
@@ -740,8 +740,8 @@ class SpaceshipPlanner:
                 )
             )
         s_d = 0
-        # if self.docking_goal:
-        #     s_d = self._get_dock_nl_cost(X)
+        if self.docking_goal:
+            s_d = self._get_dock_nl_cost(X)
 
         return δ + s_p + s + b + s_d
 
@@ -1055,52 +1055,52 @@ class SpaceshipPlanner:
         plt.savefig(save_path, dpi=300)
         print(f"Plot saved to {save_path}")
 
-    # def _get_dock_constraints(self) -> list[cvx.Constraint]:
-    #     constraints = []
-    #     dock_start, dock_end = self.dock_points[3], self.dock_points[4]
-    #     d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
-    #     d_small = 1e-3
-    #     d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
-    #     H = np.diag([1 / d_small, 1 / d_big])
-    #     H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
-    #     c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
-    #     for k in range(self.params.K):
-    #         Δx = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
-    #         Δψ = self.variables["X"][2, k] - self.problem_parameters["X_ref"][2, k]
-    #         ψ_ref = self.problem_parameters["X_ref"].value[2, k]
-    #         Rψ = np.array(
-    #             [
-    #                 np.cos(ψ_ref),
-    #                 np.sin(ψ_ref),
-    #             ]
-    #         )
-    #         ẟRψ = np.array(
-    #             [
-    #                 -np.sin(ψ_ref),
-    #                 np.cos(ψ_ref),
-    #             ]
-    #         )
-    #         for l in [self.sp_head, 0, -self.sp_tail]:
-    #             Δr = H @ (self.problem_parameters["X_ref"][0:2, k] + l * Rψ - c)
-    #             ẟx = -H.T @ Δr / (cvx.norm2(Δr) + 1e-6)
-    #             ẟψ = l * ẟx @ ẟRψ
-    #             obs_constraint = cvx.norm2(Δr) - ẟx @ Δx - ẟψ * Δψ >= 1 - self.variables["nu_dock"][k]
-    #             constraints.append(obs_constraint)
-    #     return constraints
+    def _get_dock_constraints(self) -> list[cvx.Constraint]:
+        constraints = []
+        dock_start, dock_end = self.dock_points[3], self.dock_points[4]
+        d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
+        d_small = 1e-3
+        d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
+        H = np.diag([1 / d_small, 1 / d_big])
+        H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
+        c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
+        for k in range(self.params.K):
+            Δx = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
+            Δψ = self.variables["X"][2, k] - self.problem_parameters["X_ref"][2, k]
+            ψ_ref = self.problem_parameters["X_ref"].value[2, k]
+            Rψ = np.array(
+                [
+                    np.cos(ψ_ref),
+                    np.sin(ψ_ref),
+                ]
+            )
+            ẟRψ = np.array(
+                [
+                    -np.sin(ψ_ref),
+                    np.cos(ψ_ref),
+                ]
+            )
+            for l in [self.sp_head, 0, -self.sp_tail]:
+                Δr = H @ (self.problem_parameters["X_ref"][0:2, k] + l * Rψ - c)
+                ẟx = -H.T @ Δr / (cvx.norm2(Δr) + 1e-6)
+                ẟψ = l * ẟx @ ẟRψ
+                obs_constraint = cvx.norm2(Δr) - ẟx @ Δx - ẟψ * Δψ >= 1 - self.variables["nu_dock"][k]
+                constraints.append(obs_constraint)
+        return constraints
 
-    # def _get_dock_nl_cost(self, X) -> float:
-    #     s_dock = 0
-    #     dock_start, dock_end = self.dock_points[3], self.dock_points[4]
-    #     d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
-    #     d_small = 1e-3
-    #     d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
-    #     H = np.diag([1 / d_small, 1 / d_big])
-    #     H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
-    #     c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
-    #     for k in range(self.params.K):
-    #         for l in [self.sp_head, 0, -self.sp_tail]:
-    #             pos = H @ (X[0:2, k].T + l * np.array([np.cos(X[2, k]), np.sin(X[2, k])]))
-    #             dist = np.linalg.norm(pos - c, 2)
-    #             s_dock += np.sum(np.maximum(1 - dist, 0))
-    #     print(s_dock)
-    #     return s_dock
+    def _get_dock_nl_cost(self, X) -> float:
+        s_dock = 0
+        dock_start, dock_end = self.dock_points[3], self.dock_points[4]
+        d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
+        d_small = 1e-3
+        d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
+        H = np.diag([1 / d_small, 1 / d_big])
+        H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
+        c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
+        for k in range(self.params.K):
+            for l in [self.sp_head, 0, -self.sp_tail]:
+                pos = H @ (X[0:2, k].T + l * np.array([np.cos(X[2, k]), np.sin(X[2, k])]))
+                dist = np.linalg.norm(pos - c, 2)
+                s_dock += np.sum(np.maximum(1 - dist, 0))
+        # print(s_dock)
+        return s_dock
