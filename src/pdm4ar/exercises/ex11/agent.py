@@ -28,9 +28,9 @@ class MyAgentParams:
     """
 
     end_tol: float = 1.0
-    max_tol: float = 1.5
-    debug: bool = False
-    visualise: bool = False
+    max_tol: float = 0.5
+    debug: bool = True
+    visualise: bool = True
     cache: bool = False
 
 
@@ -153,8 +153,8 @@ class SpaceshipAgent(Agent):
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
 
-        self.replans = 10
-        self.end_replanned = True
+        self.replans = 0
+        self.end_replanned = False
 
         if MyAgentParams.visualise:
             out_folder_path = "../.."
@@ -179,23 +179,18 @@ class SpaceshipAgent(Agent):
 
     def get_commands(self, sim_obs: SimObservations) -> SpaceshipCommands:
         """
-                        This method is called by the simulator at every simulation time step. (0.1 sec)
-                        We suggest to perform two tasks here:
-                         - Track the computed trajectory (open or closed loop)
-                         - Plan a new trajectory if necessary
-                         (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
-        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
-        In simulation time: 14.6, pred_state: (3.6047077096435505, 9.771710755257988), actual_state: (3.3703899100938406, 9.809520385128122)
-
-        In simulation time: 14.7, pred_state: (3.7848116057044248, 9.757268463407701), actual_state: (3.520021919520757, 9.81561763531205)
-        In simulation time: 14.8, pred_state: (3.9638488268086696, 9.743704770542985), actual_state: (3.6696539289476737, 9.821714885495977)
-                        Do **not** modify the signature of this method.
+        This method is called by the simulator at every simulation time step. (0.1 sec)
+        We suggest to perform two tasks here:
+            - Track the computed trajectory (open or closed loop)
+            - Plan a new trajectory if necessary
+            (e.g., our tracking is deviating from the desired trajectory, the obstacles are moving, etc.)
+        Do **not** modify the signature of this method.
         """
         assert isinstance(self.goal, SpaceshipTarget | DockingTarget)
         current_state = sim_obs.players[self.myname].state
         pred_curr_state = self.state_traj.at_interp(sim_obs.time)
         assert isinstance(current_state, SpaceshipState)
-        diff = np.linalg.norm(current_state.as_ndarray() - pred_curr_state.as_ndarray(), ord=1)
+        diff = np.linalg.norm(current_state.as_ndarray()[0:2] - pred_curr_state.as_ndarray()[0:2], ord=2)
 
         time = float(sim_obs.time)
 
