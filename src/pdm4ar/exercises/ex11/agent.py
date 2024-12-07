@@ -28,9 +28,9 @@ class MyAgentParams:
     """
 
     end_tol: float = 1.0
-    max_tol: float = 1.5
-    debug: bool = False
-    visualise: bool = False
+    max_tol: float = 0.5
+    debug: bool = True
+    visualise: bool = True
     cache: bool = False
 
 
@@ -153,8 +153,8 @@ class SpaceshipAgent(Agent):
                 with open(savefile, "wb") as f:
                     pickle.dump((self.cmds_plan, self.state_traj, self.tf), f)
 
-        self.replans = 10
-        self.end_replanned = True
+        self.replans = 0
+        self.end_replanned = False
 
         if MyAgentParams.visualise:
             out_folder_path = "../.."
@@ -195,7 +195,7 @@ class SpaceshipAgent(Agent):
         current_state = sim_obs.players[self.myname].state
         pred_curr_state = self.state_traj.at_interp(sim_obs.time)
         assert isinstance(current_state, SpaceshipState)
-        diff = np.linalg.norm(current_state.as_ndarray() - pred_curr_state.as_ndarray(), ord=1)
+        diff = np.linalg.norm(current_state.as_ndarray()[0:2] - pred_curr_state.as_ndarray()[0:2], ord=2)
 
         time = float(sim_obs.time)
 

@@ -109,7 +109,7 @@ class SpaceshipPlanner:
         self.sp_head = self.sg.l_f + self.sg.l_c
         self.sp_tail = self.sg.l_r
 
-        self.clearance = self.sg.width + 0.1
+        self.clearance = self.sg.width + 0.2
 
         # Solver Parameters
         self.params = SolverParameters()
@@ -176,6 +176,7 @@ class SpaceshipPlanner:
                 self.goal_state.as_ndarray()[0:2] - (dock_start + dock_end) / 2
             )  # offset * np.array[cos(psi), sin(psi)]
             self.dock_offset = np.linalg.norm(dock_base_vec, 2)
+            self.length_threshold = 0.9 * self.dock_offset
 
         if self.verbose:
             print("Start: ", self.init_state)
@@ -345,6 +346,9 @@ class SpaceshipPlanner:
 
         return problem_parameters
 
+    def _sign_on_line_side(self, X, p1, p2):
+        return (p2[1] - p1[1]) * (X[0] - p1[0]) - (p2[0] - p1[0]) * (X[1] - p1[1])
+
     def _get_constraints(self) -> list[cvx.Constraint]:
         """
         Define constraints for SCvx.
@@ -374,28 +378,26 @@ class SpaceshipPlanner:
 
         # put spaceship tail point at goal, avoids collision.
         if self.docking_goal:
-            constraints.append(self.variables["kappa_dock"] <= 0.8)
-            constraints.append(self.variables["kappa_dock"] >= 0.4)
-            l = self.sp_tail - self.variables["kappa_dock"] * self.dock_offset
-            dock_x_constraint = (
-                self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
-                == self.problem_parameters["goal_state"][0]
-            )
-            dock_y_constraint = (
-                self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
-                == self.problem_parameters["goal_state"][1]
-            )
+            goal_state = self.goal_state.as_ndarray()[0:2]
+            dock_start, dock_end = self.dock_points[3].copy(), self.dock_points[4].copy()
+            dock_base_vec = goal_state - (dock_start + dock_end) / 2
+            dock_base_unit_vec = dock_base_vec / np.linalg.norm(dock_base_vec, ord=2)
+            dock_start += dock_base_unit_vec * self.length_threshold
+            dock_end += dock_base_unit_vec * self.length_threshold
+            # for k in range(self.NUM_DISCRETISATION_STEPS - 7, self.NUM_DISCRETISATION_STEPS):
+            #     tail_x, tail_y = self.variables["X"][0, k] - self.sp_tail * cvx.co
+            dock_constraints = [
+                self._sign_on_line_side(goal_state, dock_start, dock_end)
+                * self._sign_on_line_side(self.variables["X"][0:2, k], dock_start, dock_end)
+                >= 0
+                for k in range(self.params.K - 7, self.params.K)
+            ]
+            constraints.extend(dock_constraints)
+
             goal_xy_constraint = (
                 cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
                 <= 0.5 * self.pos_tol
             )
-            # goal_y_constraint = self.variables["X"][1, -1] - self.problem_parameters["goal_state"][
-            #     1
-            # ] >= 0.5 * self.pos_tol * np.sin(self.problem_parameters["goal_state"][2].value)
-            constraints.append(dock_x_constraint)
-            constraints.append(dock_y_constraint)
-            # constraints.append(goal_x_constraint)
-            # constraints.append(goal_y_constraint)
             constraints.append(goal_xy_constraint)
         else:
             goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
