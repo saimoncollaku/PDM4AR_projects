@@ -128,7 +128,7 @@ class SpaceshipPlanner:
         self.problem_parameters = self._get_problem_parameters()
 
         self.verbose = False
-        self.visualize = True
+        self.visualize = False
 
         self.visualizer = Visualizer(self.bounds, self.sg, planets, satellites, self.params)
         self.vis_per_iters = 5
