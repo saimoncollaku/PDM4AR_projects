@@ -224,7 +224,6 @@ class SpaceshipAgent(Agent):
                     bbox_inches="tight",
                 )
 
-        # dont_plan_last_moment = time < (self.tf - 1.0)
         # if diff > MyAgentParams.end_tol:
         handle_ending = time > self.tf - 1.0 and diff > MyAgentParams.end_tol
         handle_chaos = diff > MyAgentParams.max_tol
