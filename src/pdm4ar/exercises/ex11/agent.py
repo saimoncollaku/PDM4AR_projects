@@ -27,10 +27,10 @@ class MyAgentParams:
     You can for example define some agent parameters.
     """
 
-    end_tol: float = 1.0
-    max_tol: float = 0.5
-    debug: bool = True
-    visualise: bool = True
+    end_tol: float = 0.5
+    max_tol: float = 0.7
+    debug: bool = False
+    visualise: bool = False
     cache: bool = False
 
 
