@@ -187,69 +187,69 @@ class SpaceshipAgent(Agent):
         Do **not** modify the signature of this method.
         """
         assert isinstance(self.goal, SpaceshipTarget | DockingTarget)
-        current_state = sim_obs.players[self.myname].state
-        pred_curr_state = self.state_traj.at_interp(sim_obs.time)
-        assert isinstance(current_state, SpaceshipState)
-        diff = np.linalg.norm(current_state.as_ndarray()[0:2] - pred_curr_state.as_ndarray()[0:2], ord=2)
+        # current_state = sim_obs.players[self.myname].state
+        # pred_curr_state = self.state_traj.at_interp(sim_obs.time)
+        # assert isinstance(current_state, SpaceshipState)
+        # diff = np.linalg.norm(current_state.as_ndarray()[0:2] - pred_curr_state.as_ndarray()[0:2], ord=2)
 
-        time = float(sim_obs.time)
+        # time = float(sim_obs.time)
 
-        if MyAgentParams.debug:
-            state_deviation = {
-                "x": current_state.x - pred_curr_state.x,
-                "y": current_state.y - pred_curr_state.y,
-                "psi": current_state.psi - pred_curr_state.psi,
-            }
-            state_deviation = {k: round(val, 5) for k, val in state_deviation.items()}
-            print("Sim time: {:.2f} | diff: {:.4f}".format(time, diff) + f" | state_deviation: {state_deviation}")
+        # if MyAgentParams.debug:
+        #     state_deviation = {
+        #         "x": current_state.x - pred_curr_state.x,
+        #         "y": current_state.y - pred_curr_state.y,
+        #         "psi": current_state.psi - pred_curr_state.psi,
+        #     }
+        #     state_deviation = {k: round(val, 5) for k, val in state_deviation.items()}
+        #     print("Sim time: {:.2f} | diff: {:.4f}".format(time, diff) + f" | state_deviation: {state_deviation}")
 
-        if MyAgentParams.visualise:
-            for name, satellite in self.satellites.items():
-                planet_name = name.split("/")[0]
-                θ = satellite.omega * float(sim_obs.time) + satellite.tau
-                Δθ = np.array([np.cos(θ), np.sin(θ)])
-                satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
-                satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
-                self.ax.add_patch(satellite_k)
+        # if MyAgentParams.visualise:
+        #     for name, satellite in self.satellites.items():
+        #         planet_name = name.split("/")[0]
+        #         θ = satellite.omega * float(sim_obs.time) + satellite.tau
+        #         Δθ = np.array([np.cos(θ), np.sin(θ)])
+        #         satellite_center = self.planets[planet_name].center + satellite.orbit_r * Δθ
+        #         satellite_k = plt.Circle(satellite_center, satellite.radius, color="green", alpha=1)
+        #         self.ax.add_patch(satellite_k)
 
-            self.ax.scatter(current_state.x, current_state.y, c="b", s=512)
-            self.ax.scatter(pred_curr_state.x, pred_curr_state.y, c="r", s=512)
-            dist2goal = np.linalg.norm(
-                np.array([pred_curr_state.x - self.goal_state.x, pred_curr_state.y - self.goal_state.y]), 2
-            )
+        #     self.ax.scatter(current_state.x, current_state.y, c="b", s=512)
+        #     self.ax.scatter(pred_curr_state.x, pred_curr_state.y, c="r", s=512)
+        #     dist2goal = np.linalg.norm(
+        #         np.array([pred_curr_state.x - self.goal_state.x, pred_curr_state.y - self.goal_state.y]), 2
+        #     )
 
-            if dist2goal < 1.0:
-                self.fig.savefig(
-                    self.savedir + "/mismatch.png",
-                    bbox_inches="tight",
-                )
+        #     if dist2goal < 1.0:
+        #         self.fig.savefig(
+        #             self.savedir + "/mismatch.png",
+        #             bbox_inches="tight",
+        #         )
 
-        # dont_plan_last_moment = time < (self.tf - 1.0)
-        # if diff > MyAgentParams.end_tol:
-        handle_ending = time > self.tf - 1.0 and diff > MyAgentParams.end_tol
-        handle_chaos = diff > MyAgentParams.max_tol
-        if (handle_ending and not self.end_replanned) or (handle_chaos and self.replans < 10):  # do only 1 replan
-            # if time > self.tf * 0.8 and self.replans < 0:
-            self.end_replanned = True
-            self.replans += 1
-            if MyAgentParams.debug:
-                print(f"\nReplanning {self.replans}th time\n")
-            timestamps = np.linspace(time, self.tf, SolverParameters.K)
-            # prev_states = np.array([self.state_traj.at_interp(t).as_ndarray().tolist() for t in timestamps]).T
-            prev_cmds = np.array([self.cmds_plan.at_interp(t).as_ndarray().tolist() for t in timestamps]).T
-            timestamps = np.expand_dims(np.linspace(0, 1, SolverParameters.K), axis=1)
-            prev_states = np.squeeze(
-                (1 - timestamps) * current_state.as_ndarray() + timestamps * self.goal_spaceship_state.as_ndarray()
-            ).T
-            prev_tf = np.array(self.tf - time)
+        # # dont_plan_last_moment = time < (self.tf - 1.0)
+        # # if diff > MyAgentParams.end_tol:
+        # handle_ending = time > self.tf - 1.0 and diff > MyAgentParams.end_tol
+        # handle_chaos = diff > MyAgentParams.max_tol
+        # if (handle_ending and not self.end_replanned) or (handle_chaos and self.replans < 10):  # do only 1 replan
+        #     # if time > self.tf * 0.8 and self.replans < 0:
+        #     self.end_replanned = True
+        #     self.replans += 1
+        #     if MyAgentParams.debug:
+        #         print(f"\nReplanning {self.replans}th time\n")
+        #     timestamps = np.linspace(time, self.tf, SolverParameters.K)
+        #     # prev_states = np.array([self.state_traj.at_interp(t).as_ndarray().tolist() for t in timestamps]).T
+        #     prev_cmds = np.array([self.cmds_plan.at_interp(t).as_ndarray().tolist() for t in timestamps]).T
+        #     timestamps = np.expand_dims(np.linspace(0, 1, SolverParameters.K), axis=1)
+        #     prev_states = np.squeeze(
+        #         (1 - timestamps) * current_state.as_ndarray() + timestamps * self.goal_spaceship_state.as_ndarray()
+        #     ).T
+        #     prev_tf = np.array(self.tf - time)
 
-            assert prev_states.shape == (8, SolverParameters.K)
-            assert prev_cmds.shape == (2, SolverParameters.K)
-            # print("state init trajectory to follow:")
-            # print(prev_states[0:2, :].round(6))
-            self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
-                current_state, self.goal_state, self.dock_points, time, prev_states, prev_cmds, prev_tf
-            )
+        #     assert prev_states.shape == (8, SolverParameters.K)
+        #     assert prev_cmds.shape == (2, SolverParameters.K)
+        #     # print("state init trajectory to follow:")
+        #     # print(prev_states[0:2, :].round(6))
+        #     self.cmds_plan, self.state_traj, self.tf = self.planner.compute_trajectory(
+        #         current_state, self.goal_state, self.dock_points, time, prev_states, prev_cmds, prev_tf
+        #     )
 
         # ZeroOrderHold
         # cmds = self.cmds_plan.at_or_previous(sim_obs.time)
