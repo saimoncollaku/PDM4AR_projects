@@ -323,6 +323,8 @@ class SpaceshipPlanner:
         variables["nu_bounds"] = cvx.Variable(4 * 3 * self.params.K, nonneg=True)
         variables["kappa_dock"] = cvx.Variable(1, nonneg=True)
 
+        variables["nu_dock"] = cvx.Variable(self.params.K, nonneg=True)
+
         return variables
 
     def _get_problem_parameters(self) -> dict:
@@ -374,17 +376,17 @@ class SpaceshipPlanner:
 
         # put spaceship tail point at goal, avoids collision.
         if self.docking_goal:
-            constraints.append(self.variables["kappa_dock"] <= 0.8)
-            constraints.append(self.variables["kappa_dock"] >= 0.4)
-            l = self.sp_tail - self.variables["kappa_dock"] * self.dock_offset
-            dock_x_constraint = (
-                self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
-                == self.problem_parameters["goal_state"][0]
-            )
-            dock_y_constraint = (
-                self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
-                == self.problem_parameters["goal_state"][1]
-            )
+            # constraints.append(self.variables["kappa_dock"] <= 0.8)
+            # constraints.append(self.variables["kappa_dock"] >= 0.4)
+            # l = self.sp_tail - self.variables["kappa_dock"] * self.dock_offset
+            # dock_x_constraint = (
+            #     self.variables["X"][0, -1] - l * np.cos(self.problem_parameters["goal_state"][2].value)
+            #     == self.problem_parameters["goal_state"][0]
+            # )
+            # dock_y_constraint = (
+            #     self.variables["X"][1, -1] - l * np.sin(self.problem_parameters["goal_state"][2].value)
+            #     == self.problem_parameters["goal_state"][1]
+            # )
             goal_xy_constraint = (
                 cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
                 <= 0.5 * self.pos_tol
@@ -392,11 +394,12 @@ class SpaceshipPlanner:
             # goal_y_constraint = self.variables["X"][1, -1] - self.problem_parameters["goal_state"][
             #     1
             # ] >= 0.5 * self.pos_tol * np.sin(self.problem_parameters["goal_state"][2].value)
-            constraints.append(dock_x_constraint)
-            constraints.append(dock_y_constraint)
+            # constraints.append(dock_x_constraint)
+            # constraints.append(dock_y_constraint)
             # constraints.append(goal_x_constraint)
             # constraints.append(goal_y_constraint)
             constraints.append(goal_xy_constraint)
+            constraints += self._get_dock_constraints()
         else:
             goal_xy_constraint = self.variables["X"][0:2, -1] == self.problem_parameters["goal_state"][0:2]
             constraints.append(goal_xy_constraint)
@@ -567,6 +570,7 @@ class SpaceshipPlanner:
             [cvx.norm2(self.variables["X"][0:2, k + 1] - self.variables["X"][0:2, k]) for k in range(self.params.K - 1)]
         )
         objective += 20.0 * cvx.norm2(self.variables["X"][0:2, -1] - self.problem_parameters["goal_state"][0:2])
+        objective += self.params.lambda_nu * cvx.sum(self.variables["nu_dock"])
 
         return cvx.Minimize(objective)
 
@@ -725,14 +729,19 @@ class SpaceshipPlanner:
                     round(b, 6),
                 )
             )
+        s_d = 0
+        if self.docking_goal:
+            s_d = self._get_dock_nl_cost(X)
 
-        return δ + s_p + s + b
+        return δ + s_p + s + b + s_d
 
     def L(self, nu_dyn, nu_planets, nu_satellites) -> float:
         # eqns 52-54
         cost = np.linalg.norm(nu_dyn, 1)
         cost += np.sum([nu for nu in nu_planets.values()])
         cost += np.sum([nu for nu in nu_satellites.values()])
+        cost += np.sum(self.variables["nu_dock"].value)
+        print("[L]: nu_dock = {}".format(np.sum(self.variables["nu_dock"].value)))
 
         nu_bounds = self.variables["nu_bounds"].value
         cost += np.sum(nu_bounds)
@@ -1036,5 +1045,52 @@ class SpaceshipPlanner:
         plt.savefig(save_path, dpi=300)
         print(f"Plot saved to {save_path}")
 
-        # Show the plot
-        # plt.show()
+    def _get_dock_constraints(self) -> list[cvx.Constraint]:
+        constraints = []
+        dock_start, dock_end = self.dock_points[3], self.dock_points[4]
+        d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
+        d_small = 1e-3
+        d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
+        H = np.diag([1 / d_small, 1 / d_big])
+        H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
+        c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
+        for k in range(self.params.K):
+            Δx = self.variables["X"][0:2, k] - self.problem_parameters["X_ref"][0:2, k]
+            Δψ = self.variables["X"][2, k] - self.problem_parameters["X_ref"][2, k]
+            ψ_ref = self.problem_parameters["X_ref"].value[2, k]
+            Rψ = np.array(
+                [
+                    np.cos(ψ_ref),
+                    np.sin(ψ_ref),
+                ]
+            )
+            ẟRψ = np.array(
+                [
+                    -np.sin(ψ_ref),
+                    np.cos(ψ_ref),
+                ]
+            )
+            for l in [self.sp_head, 0, -self.sp_tail]:
+                Δr = H @ (self.problem_parameters["X_ref"][0:2, k] + l * Rψ - c)
+                ẟx = -H.T @ Δr / (cvx.norm2(Δr) + 1e-6)
+                ẟψ = l * ẟx @ ẟRψ
+                obs_constraint = cvx.norm2(Δr) - ẟx @ Δx - ẟψ * Δψ >= 1 - self.variables["nu_dock"][k]
+                constraints.append(obs_constraint)
+        return constraints
+
+    def _get_dock_nl_cost(self, X) -> float:
+        s_dock = 0
+        dock_start, dock_end = self.dock_points[3], self.dock_points[4]
+        d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
+        d_small = 1e-3
+        d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
+        H = np.diag([1 / d_small, 1 / d_big])
+        H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
+        c = np.array([(dock_end[0] + dock_start[0]) / 2, (dock_end[1] + dock_start[1]) / 2])
+        for k in range(self.params.K):
+            for l in [self.sp_head, 0, -self.sp_tail]:
+                pos = H @ (X[0:2, k].T + l * np.array([np.cos(X[2, k]), np.sin(X[2, k])]))
+                dist = np.linalg.norm(pos - c, 2)
+                s_dock += np.sum(np.maximum(1 - dist, 0))
+        print(s_dock)
+        return s_dock
