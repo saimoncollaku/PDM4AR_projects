@@ -109,7 +109,7 @@ class SpaceshipPlanner:
         self.sp_head = self.sg.l_f + self.sg.l_c
         self.sp_tail = self.sg.l_r
 
-        self.clearance = self.sg.width
+        self.clearance = self.sg.width + 0.2
 
         # Solver Parameters
         self.params = SolverParameters()
@@ -730,16 +730,18 @@ class SpaceshipPlanner:
             b += np.sum(np.maximum(pos_x - self.bounds[2] + self.clearance, 0))
             b += np.sum(np.maximum(pos_y - self.bounds[3] + self.clearance, 0))
 
+        if self.verbose:
+            print(
+                "[J]: defect = {}, planet_obs = {}, satellite_obs = {}, boundary_obs = {}".format(
+                    round(δ, 6),
+                    round(s_p, 6),
+                    round(s, 6),
+                    round(b, 6),
+                )
+            )
         s_d = 0
         if self.docking_goal:
             s_d = self._get_dock_nl_cost(X)
-
-        if self.verbose:
-            print(
-                "[J]: defect = {}, planet_obs = {}, satellite_obs = {}, boundary_obs = {}, dock_obs = {}".format(
-                    round(δ, 6), round(s_p, 6), round(s, 6), round(b, 6), round(s_d, 6)
-                )
-            )
 
         return δ + s_p + s + b + s_d
 
@@ -756,12 +758,11 @@ class SpaceshipPlanner:
 
         if self.verbose:
             print(
-                "[L]: nu_dyn = {}, nu_planets = {}, nu_satellites = {}, nu_bounds = {}, nu_dock = {}".format(
+                "[L]: nu_dyn = {}, nu_planets = {}, nu_satellites = {}, nu_bounds = {}".format(
                     round(np.linalg.norm(nu_dyn, 1), 6),
                     round(np.sum([nu for nu in nu_planets.values()]), 6),
                     round(np.sum([nu for nu in nu_satellites.values()]), 6),
                     round(np.sum(nu_bounds), 6),
-                    round(np.sum(self.variables["nu_dock"].value), 6),
                 )
             )
 
@@ -1058,7 +1059,7 @@ class SpaceshipPlanner:
         constraints = []
         dock_start, dock_end = self.dock_points[3], self.dock_points[4]
         d_big = np.linalg.norm(dock_end - dock_start, 2) / 2
-        d_small = 1e-2
+        d_small = 1e-3
         d_rot = np.arctan2(dock_end[1] - dock_start[1], dock_end[0] - dock_start[0])
         H = np.diag([1 / d_small, 1 / d_big])
         H = H @ np.array([[np.cos(-d_rot), -np.sin(-d_rot)], [np.sin(-d_rot), np.cos(-d_rot)]])
