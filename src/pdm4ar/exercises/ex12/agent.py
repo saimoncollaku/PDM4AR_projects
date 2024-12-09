@@ -8,7 +8,7 @@ from dg_commons.sim.goals import PlanningGoal
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.sim.agents import Agent
 from dg_commons.sim.models.obstacles import StaticObstacle
-from dg_commons.sim.models.vehicle import VehicleCommands
+from dg_commons.sim.models.vehicle import VehicleCommands, VehicleState
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
 
@@ -37,6 +37,9 @@ class Pdm4arAgent(Agent):
         """This method is called by the simulator only at the beginning of each simulation.
         Do not modify the signature of this method."""
         self.name = init_obs.my_name
+        assert init_obs.goal
+        assert isinstance(init_obs.model_geometry, VehicleGeometry)
+        assert isinstance(init_obs.model_params, VehicleParameters)
         self.goal = init_obs.goal
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
@@ -54,5 +57,7 @@ class Pdm4arAgent(Agent):
         # todo implement here some better planning
         rnd_acc = random.random() * self.params.param1
         rnd_ddelta = (random.random() - 0.5) * self.params.param1
+        state = sim_obs.players[self.name].state
+        assert isinstance(state, VehicleState)
 
         return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
