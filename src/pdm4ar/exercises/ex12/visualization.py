@@ -51,7 +51,7 @@ class Visualizer:
         for traj in trajectories:
             sampled_traj = np.vstack([[x.x, x.y, x.vx] for x in traj.values])
             segments.append(sampled_traj[:, :2])
-            mcolor.append(sampled_traj[:, 2])  # fixme marker color functionality not available yet
+            # mcolor.append(sampled_traj[:, 2])  # fixme marker color functionality not available yet
 
         if traj_lines is None:
             traj_lines = LineCollection(
@@ -62,7 +62,7 @@ class Visualizer:
         traj_lines.set_segments(segments=segments)
         traj_lines.set_color(colors)
         traj_points.set_offsets(np.concatenate(segments))
-        traj_points.set_facecolor(mcolor)  # todo adjust color based on velocity
+        # traj_points.set_facecolor(mcolor)  # todo adjust color based on velocity
 
         ax.add_collection(traj_lines)
         ax.add_collection(traj_points)

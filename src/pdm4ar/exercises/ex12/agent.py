@@ -1,5 +1,6 @@
 import random
 from dataclasses import dataclass
+import time
 from typing import Sequence
 
 from commonroad.scenario.lanelet import LaneletNetwork
@@ -55,6 +56,9 @@ class Pdm4arAgent(Agent):
         states = [VehicleState(ctr.q.p[0], ctr.q.p[1], ctr.q.theta, 0, 0) for ctr in ptx]
         self.ref_traj = Trajectory(timestamps=timestamps, values=states)
 
+        self.timesteps = []
+        self.states = []
+
     def get_commands(self, sim_obs: SimObservations) -> VehicleCommands:
         """This method is called by the simulator every dt_commands seconds (0.1s by default).
         Do not modify the signature of this method.
@@ -66,7 +70,12 @@ class Pdm4arAgent(Agent):
         """
 
         self.visualizer.plot_scenario(sim_obs)
-        self.visualizer.plot_trajectories([self.ref_traj])
+        self.timesteps.append(sim_obs.time)
+        self.states.append(sim_obs.players[self.name].state)
+
+        my_traj = Trajectory(timestamps=self.timesteps, values=self.states)
+
+        self.visualizer.plot_trajectories([self.ref_traj, my_traj], colors=["black", "firebrick"])
         self.visualizer.save_fig("../../out/12/scene.png")
         # trajectory = Trajectory()
         # todo implement here some better planning
