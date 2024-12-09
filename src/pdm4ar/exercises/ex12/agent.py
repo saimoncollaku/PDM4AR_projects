@@ -8,9 +8,15 @@ from dg_commons.sim.goals import PlanningGoal
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.sim.agents import Agent
 from dg_commons.sim.models.obstacles import StaticObstacle
-from dg_commons.sim.models.vehicle import VehicleCommands
+from dg_commons.sim.models.vehicle import VehicleCommands, VehicleState
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
+from dg_commons.planning import Trajectory, commands_plan_from_trajectory
+from dg_commons.seq.sequence import DgSampledSequence
+
+import numpy as np
+
+from pdm4ar.exercises.ex12.visualization import Visualizer
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,14 @@ class Pdm4arAgent(Agent):
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
 
+        self.visualizer = Visualizer(init_obs)
+        self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
+
+        ptx = init_obs.goal.ref_lane.control_points
+        timestamps = list(np.linspace(0, 10, len(ptx)))
+        states = [VehicleState(ctr.q.p[0], ctr.q.p[1], ctr.q.theta, 0, 0) for ctr in ptx]
+        self.ref_traj = Trajectory(timestamps=timestamps, values=states)
+
     def get_commands(self, sim_obs: SimObservations) -> VehicleCommands:
         """This method is called by the simulator every dt_commands seconds (0.1s by default).
         Do not modify the signature of this method.
@@ -51,6 +65,10 @@ class Pdm4arAgent(Agent):
         :return:
         """
 
+        self.visualizer.plot_scenario(sim_obs)
+        self.visualizer.plot_trajectories([self.ref_traj])
+        self.visualizer.save_fig("../../out/12/scene.png")
+        # trajectory = Trajectory()
         # todo implement here some better planning
         rnd_acc = random.random() * self.params.param1
         rnd_ddelta = (random.random() - 0.5) * self.params.param1
