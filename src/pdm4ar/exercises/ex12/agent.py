@@ -28,6 +28,7 @@ from pdm4ar.exercises.ex12.saimon.b_spline import SplineReference
 from pdm4ar.exercises.ex12.saimon.frenet_sampler import FrenetSampler
 from pdm4ar.exercises.ex12.saimon.sim_env_coesion import obtain_complete_ref
 from pdm4ar.exercises.ex12.saimon.sim_env_coesion import get_lanelet_distances
+from pdm4ar.exercises.ex12.controller import BasicController as Controller
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,10 @@ class Pdm4arAgent(Agent):
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
 
+        self.lanelet_network = init_obs.dg_scenario.lanelet_network
+        self.visualizer = Visualizer(init_obs)
+        self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
+
         # * SAIMON TEST #######################################################
         reference_points, target_lanelet_id = obtain_complete_ref(init_obs)
         self.road = get_lanelet_distances(init_obs.dg_scenario.lanelet_network, target_lanelet_id)
@@ -81,6 +86,7 @@ class Pdm4arAgent(Agent):
         # initial state, goal state, dynamics parameters
         # https://github.com/idsc-frazzoli/dg-commons/blob/master/src/dg_commons/sim/models/vehicle.py#L197 <- for dynamics
         self.planner = Planner()
+        self.controller = Controller(self.sp, self.sg)
 
         self.all_timesteps = []
         self.all_states = []
@@ -97,6 +103,12 @@ class Pdm4arAgent(Agent):
         my_state = sim_obs.players[self.name].state
         assert isinstance(my_state, VehicleState)
 
+        self.visualizer.plot_scenario(sim_obs)
+        self.all_timesteps.append(sim_obs.time)
+        self.all_states.append(my_state)
+
+        my_traj = Trajectory(timestamps=self.all_timesteps, values=self.all_states)
+
         if np.isclose(float(sim_obs.time), 0):
             current_cart = np.column_stack((my_state.x, my_state.y))
             current_frenet = self.spline_ref.to_frenet(current_cart)
@@ -112,11 +124,36 @@ class Pdm4arAgent(Agent):
             # TODO perform feasibility, cost and collision check
             # (iterate through all)
             cp = self.spline_ref.to_cartesian(fp[5])
+
+            timestamps = list(cp[1])
+            states = [
+                VehicleState(
+                    cp[0][i][0],
+                    cp[0][i][1],
+                    (
+                        np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
+                        if i < cp[0].shape[0] - 1
+                        else my_state.psi
+                    ),
+                    cp[2][i],
+                    0,
+                )
+                for i in range(cp[0].shape[0])
+            ]
+            self.agent_traj = Trajectory(timestamps, states)
+
             # TODO find best path
-            best_path_index = 5
+            best_path_index = 10
             self.sampler.assign_next_init_conditions(best_path_index)
+            self.controller.set_reference(self.agent_traj)
 
-        rnd_acc = random.random() * self.params.param1 * 0
-        rnd_ddelta = (random.random() - 0.5) * self.params.param1 * 0
+        self.visualizer.plot_trajectories([my_traj, self.agent_traj], colors=["firebrick", "green"])
+        self.visualizer.save_fig()
 
-        return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
+        # rnd_acc = random.random() * self.params.param1 * 0
+        # rnd_ddelta = (random.random() - 0.5) * self.params.param1 * 0
+
+        # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
+        cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
+
+        return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)
