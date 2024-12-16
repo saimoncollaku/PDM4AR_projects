@@ -91,14 +91,12 @@ class FrenetSampler:
 
         return self.last_samples
 
-    def assign_next_init_conditions(self, index: int) -> None:
-        """Assign the initial conditions given the optimal path index
+    def assign_next_init_conditions(self, index: int, replan_time: float = 3.5) -> None:
+        """Assign the initial conditions given the best path index
 
         Args:
             index (int): index of the optimal path from the last batch of samples
         """
-        # ! CAN BE CHANGED
-        replan_time = 0.1
         i = int(replan_time / self.dt)
 
         fp = self.last_samples[index]
