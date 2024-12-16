@@ -65,14 +65,41 @@ class KinematicsFilter:
         return True
 
 
+class CollisionFilter:
+    def __init__(self):
+        pass
+
+    def check_collision(self):
+        raise NotImplementedError()
+
+
 class Cost:
     sp: VehicleParameters
     sg: VehicleGeometry
     __trajectory: TrajectorySample
     v_ref: float
 
-    def __init__(self) -> None:
+    def __init__(self, init_obs) -> None:
+        self.name = init_obs.my_name
         raise NotImplementedError()
+
+    # use reference_points from agent.py (L80)
+    # can probably be subsumed into init
+    def set_reference(self, ref_line: np.ndarray):
+        ref_line_vec = (ref_line[-1] - ref_line[0]) / np.linalg.norm(ref_line[-1] - ref_line[0], 2)
+        self.__reference = (ref_line[0], ref_line_vec)
+
+    # can probably be subsumed into evaluate function that calculates total cost
+    def set_observations(self, sim_obs):
+        self.__observations = sim_obs
+
+    @property
+    def reference(self):
+        return self.__reference
+
+    @property
+    def observations(self):
+        return self.__observations
 
     @property
     def trajectory(self):
@@ -97,7 +124,20 @@ class Cost:
         return constants
 
     def penalize_deviation_from_reference(self):
-        pass
+        ref_pt, ref_vec = self.reference
+        pts = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
+        dist = np.cross(ref_vec, pts - ref_pt)
+        return simpson(np.square(dist), dx=self.__trajectory.dt)
 
     def penalize_closeness_from_obstacles(self):
-        pass
+        ts = np.linspace(0, self.__trajectory.dt * self.__trajectory.T, self.__trajectory.T)
+        player_pos = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
+        cost = 0
+        for player in self.__observations.players:
+            if player != self.name:
+                obs_state = self.__observations.players[player].state
+                obs_init = np.stack([obs_state.x, obs_state.y], axis=1)
+                obs_pos = obs_init + obs_state.v * ts
+                dist = np.linalg.norm(obs_pos - player_pos, 2)
+                cost += simpson(1 / (dist**2), dx=self.__trajectory.dt)
+        return cost
