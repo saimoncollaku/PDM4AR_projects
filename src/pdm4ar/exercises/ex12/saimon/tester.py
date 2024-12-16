@@ -2,6 +2,7 @@ from pdm4ar.exercises.ex12.saimon.frenet_sampler import FrenetSampler
 from pdm4ar.exercises.ex12.saimon.b_spline import SplineReference
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 
 
 def main():
@@ -11,14 +12,14 @@ def main():
     theta = np.linspace(0, np.pi, num_points, endpoint=False)
     x = radius * np.cos(theta)
     y = radius * np.sin(theta)
-    reference_points = np.column_stack((x, y))
 
     # * ****************************************************************
     # 1- create reference path, spline is needed to add "continuity" (resolution HAS TO BE BIG ENOUGH)
+    reference_points = np.column_stack((x, y))
     spline_ref = SplineReference()
-    spline_ref.obtain_reference_traj(reference_points, resolution=1000)
-    # ref_points = np.column_stack((ref_x, ref_y))
-    # ref_frenet = spline_ref.to_frenet(ref_points)
+    ref_x, ref_y, _, _ = spline_ref.obtain_reference_traj(reference_points, resolution=1000)
+    ref_points = np.column_stack((ref_x, ref_y))
+    ref_frenet = spline_ref.to_frenet(ref_points)
     # 2- add initial condition, they have to be calculated, fetched from the car state
     c_speed = 20 / 3.6  # current speed [m/s]
     c_d = 2.0  # current lateral position [m]
@@ -36,36 +37,36 @@ def main():
     sampler.assign_init_conditions(5)
     # * ****************************************************************
 
-    # plt.figure(figsize=(12, 5))
-    # plt.subplot(1, 2, 1)
-    # plt.title("Original vs Reconstructed Paths")
-    # plt.plot(ref_points[:, 0], ref_points[:, 1], "b-", label="Reference Trajectory")
-    # for i, path in enumerate(fp):
-    #     frenet_points = np.column_stack((path.s, path.d))
-    #     path_points = spline_ref.to_cartesian(frenet_points)
-    #     if path.s[-1] < 10:
-    #         plt.scatter(path_points[:, 0], path_points[:, 1], label=f"Path {i}")
-    # plt.xlabel("X")
-    # plt.ylabel("Y")
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.title("Original vs Reconstructed Paths")
+    plt.plot(ref_points[:, 0], ref_points[:, 1], "b-", label="Reference Trajectory")
+    for i, path in enumerate(fp):
+        frenet_points = np.column_stack((path.s, path.d))
+        path_points = spline_ref.to_cartesian(frenet_points)
+        if random.random() < 0.01:
+            plt.scatter(path_points[:, 0], path_points[:, 1], label=f"Path {i}")
+    plt.xlabel("X")
+    plt.ylabel("Y")
     # plt.legend()
-    # plt.axis("equal")
-    # plt.grid(True)
+    plt.axis("equal")
+    plt.grid(True)
 
-    # plt.subplot(1, 2, 2)
-    # plt.title("Frenet Frame Transformation")
-    # plt.plot(ref_frenet[:, 0], ref_frenet[:, 1], "b-", label="Reference Trajectory")
-    # for i, path in enumerate(fp):
-    #     frenet_points = np.column_stack((path.s, path.d))
-    #     if path.s[-1] < 10:
-    #         plt.scatter(frenet_points[:, 0], frenet_points[:, 1], label=f"Path {i}")
+    plt.subplot(1, 2, 2)
+    plt.title("Frenet Frame Transformation")
+    plt.plot(ref_frenet[:, 0], ref_frenet[:, 1], "b-", label="Reference Trajectory")
+    for i, path in enumerate(fp):
+        frenet_points = np.column_stack((path.s, path.d))
+        if random.random() < 0.01:
+            plt.scatter(frenet_points[:, 0], frenet_points[:, 1], label=f"Path {i}")
 
-    # plt.xlabel("s (Arc Length)")
-    # plt.ylabel("d (Lateral Distance)")
+    plt.xlabel("s (Arc Length)")
+    plt.ylabel("d (Lateral Distance)")
     # plt.legend()
-    # plt.grid(True)
+    plt.grid(True)
 
-    # plt.tight_layout()
-    # plt.savefig("frenet.png")
+    plt.tight_layout()
+    plt.savefig("frenet.png")
 
     # plt.figure(figsize=(12, 5))
 

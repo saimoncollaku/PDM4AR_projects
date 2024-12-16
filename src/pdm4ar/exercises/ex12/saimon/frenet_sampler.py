@@ -91,7 +91,7 @@ class FrenetSampler:
 
         return self.last_samples
 
-    def assign_init_conditions(self, index: int) -> None:
+    def assign_next_init_conditions(self, index: int) -> None:
         """Assign the initial conditions given the optimal path index
 
         Args:

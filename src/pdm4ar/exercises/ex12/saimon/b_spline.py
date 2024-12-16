@@ -1,18 +1,8 @@
 from typing import Tuple
-import math
-
 import numpy as np
 import scipy.interpolate as interpolate
-
-
-import numpy as np
-from scipy import interpolate
-
-
-import numpy as np
+from scipy.interpolate import splprep, splev
 import matplotlib.pyplot as plt
-from scipy import interpolate
-from typing import Tuple
 
 
 class SplineReference:
@@ -29,13 +19,12 @@ class SplineReference:
         resolution: int = 100,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         points = np.array(points)
-        n = len(points)
-        u = np.linspace(0, 1, n)
-        tck_x = interpolate.UnivariateSpline(u, points[:, 0], k=degree, s=0)
-        tck_y = interpolate.UnivariateSpline(u, points[:, 1], k=degree, s=0)
-        u_interp = np.linspace(0, 1, resolution)
-        self.x = tck_x(u_interp)
-        self.y = tck_y(u_interp)
+
+        tck, _ = splprep(points.T, k=degree, s=1)
+        u = np.linspace(0, 1, int(resolution))
+
+        # Evaluate the spline for x and y
+        self.x, self.y = splev(u, tck)
 
         # Yaw
         dx = np.gradient(self.x)
@@ -114,56 +103,3 @@ class SplineReference:
             cartesian_points.append(cartesian_point)
 
         return np.array(cartesian_points)
-
-
-def main():
-    radius = 2
-    num_points = 10
-    theta = np.linspace(0, np.pi, num_points, endpoint=False)
-    x = radius * np.cos(theta)
-    y = radius * np.sin(theta)
-    path_points = np.column_stack((x, y))
-
-    num_points = 10
-    radius = 4
-    theta = np.linspace(0, np.pi, num_points, endpoint=False)
-    x = radius * np.cos(theta)
-    y = radius * np.sin(theta)
-    reference_points = np.column_stack((x, y))
-    spline_ref = SplineReference()
-    ref_x, ref_y, _, _ = spline_ref.obtain_reference_traj(reference_points, resolution=100)
-    ref_points = np.column_stack((ref_x, ref_y))
-    ref_frenet = spline_ref.to_frenet(ref_points)
-    frenet_points = spline_ref.to_frenet(path_points)
-    reconstructed_points = spline_ref.to_cartesian(frenet_points)
-
-    plt.figure(figsize=(12, 5))
-
-    plt.subplot(1, 2, 1)
-    plt.title("Original vs Reconstructed Paths")
-    plt.plot(ref_points[:, 0], ref_points[:, 1], "b-", label="Reference Trajectory")
-    plt.plot(path_points[:, 0], path_points[:, 1], "r-", label="Original Path")
-    plt.scatter(path_points[:, 0], path_points[:, 1], color="r")
-    plt.plot(reconstructed_points[:, 0], reconstructed_points[:, 1], "g--", label="Reconstructed Path")
-    plt.scatter(reconstructed_points[:, 0], reconstructed_points[:, 1], color="g")
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.legend()
-    plt.axis("equal")
-    plt.grid(True)
-
-    plt.subplot(1, 2, 2)
-    plt.title("Frenet Frame Transformation")
-    plt.plot(ref_frenet[:, 0], ref_frenet[:, 1], "b-", label="Reference Trajectory")
-    plt.scatter(frenet_points[:, 0], frenet_points[:, 1], color="r", label="Frenet Points")
-    plt.xlabel("s (Arc Length)")
-    plt.ylabel("d (Lateral Distance)")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig("spline_test.png")
-
-
-if __name__ == "__main__":
-    main()
