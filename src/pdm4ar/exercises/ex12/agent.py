@@ -111,8 +111,7 @@ class Pdm4arAgent(Agent):
             fp = self.sampler.get_paths_merge()
             # TODO perform feasibility, cost and collision check
             # (iterate through all)
-            frenet_points = np.column_stack((fp[5].s, fp[5].d))
-            path_points = self.spline_ref.to_cartesian(frenet_points)
+            cp = self.spline_ref.to_cartesian(fp[5])
             # TODO find best path
             best_path_index = 5
             self.sampler.assign_next_init_conditions(best_path_index)
