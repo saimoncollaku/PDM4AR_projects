@@ -30,6 +30,12 @@ class Visualizer:
         self.missions = {}
         self.colors = {}
 
+    def clear_viz(self):
+        plt.close(self.fig)
+        self.fig, self.axes = plt.subplots(figsize=(20, 20))
+        self.commonroad_renderer.ax = self.axes
+        self.shapely_viz.ax = self.axes
+
     def set_goal(self, agent_name, goal, model):
         self.missions[agent_name] = goal
         self.colors[agent_name] = model.color

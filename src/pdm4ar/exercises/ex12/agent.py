@@ -103,7 +103,6 @@ class Pdm4arAgent(Agent):
         my_state = sim_obs.players[self.name].state
         assert isinstance(my_state, VehicleState)
 
-        self.visualizer.plot_scenario(sim_obs)
         self.all_timesteps.append(sim_obs.time)
         self.all_states.append(my_state)
 
@@ -123,7 +122,11 @@ class Pdm4arAgent(Agent):
             fp = self.sampler.get_paths_merge()
             # TODO perform feasibility, cost and collision check
             # (iterate through all)
-            cp = self.spline_ref.to_cartesian(fp[5])
+            num_traj = len(self.sampler.last_samples)
+            best_path_index = 15
+            print(num_traj, best_path_index)
+
+            cp = self.spline_ref.to_cartesian(fp[best_path_index])
 
             timestamps = list(cp[1])
             states = [
@@ -143,10 +146,34 @@ class Pdm4arAgent(Agent):
             self.agent_traj = Trajectory(timestamps, states)
 
             # TODO find best path
-            best_path_index = 10
             self.sampler.assign_next_init_conditions(best_path_index)
             self.controller.set_reference(self.agent_traj)
 
+            # self.visualizer.plot_scenario(sim_obs)
+            # trajectories = []
+            # for sample in np.random.choice(num_traj, 10):
+            #     cp = self.spline_ref.to_cartesian(self.sampler.last_samples[sample])
+            #     timestamps = list(cp[1])
+            #     states = [
+            #         VehicleState(
+            #             cp[0][i][0],
+            #             cp[0][i][1],
+            #             (
+            #                 np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
+            #                 if i < cp[0].shape[0] - 1
+            #                 else my_state.psi
+            #             ),
+            #             cp[2][i],
+            #             0,
+            #         )
+            #         for i in range(cp[0].shape[0])
+            #     ]
+            #     trajectories.append(Trajectory(timestamps, states))
+            # self.visualizer.plot_trajectories(trajectories, colors=None)
+            # self.visualizer.save_fig("../../out/12/samples" + str(round(float(sim_obs.time), 2)) + ".png")
+            # self.visualizer.clear_viz()
+
+        self.visualizer.plot_scenario(sim_obs)
         self.visualizer.plot_trajectories([my_traj, self.agent_traj], colors=["firebrick", "green"])
         self.visualizer.save_fig()
 

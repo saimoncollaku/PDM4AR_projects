@@ -56,7 +56,7 @@ class FrenetSampler:
         # ! CAN BE CHANGED
         self.dt = 0.1
         self.max_t = 3.5
-        self.min_t = 3
+        self.min_t = 3.0
 
     # TODO, its possible that we need to make another path maker for low speed
     def get_paths_merge(self):
@@ -98,8 +98,8 @@ class FrenetSampler:
             index (int): index of the optimal path from the last batch of samples
         """
         # ! CAN BE CHANGED
-        replan_time = 0.1
-        i = int(replan_time / self.dt)
+        # replan_time = 3.0
+        i = -1
 
         fp = self.last_samples[index]
         self.c_speed = fp.s_d[i]
