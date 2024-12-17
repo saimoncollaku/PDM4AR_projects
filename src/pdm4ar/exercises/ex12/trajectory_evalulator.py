@@ -99,6 +99,7 @@ class CollisionFilter:
             dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
             if dist <= self.dist:
                 return True
+        return False
 
 
 class Cost:
@@ -164,8 +165,8 @@ class Cost:
         for player in self.__observations.players:
             if player != self.name:
                 obs_state = self.__observations.players[player].state
-                obs_init = np.stack([obs_state.x, obs_state.y], axis=1)
-                obs_vel = np.stack([obs_state.v * np.cos(obs_state.psi), obs_state.v * np.sin(obs_state.psi)], axis=1)
+                obs_init = np.array([obs_state.x, obs_state.y])
+                obs_vel = np.array([obs_state.v * np.cos(obs_state.psi), obs_state.v * np.sin(obs_state.psi)])
                 obs_pos = obs_init + obs_vel * ts
                 dist = np.linalg.norm(obs_pos - player_pos, 2)
                 cost += simpson(1 / (dist**2), dx=self.__trajectory.dt)
