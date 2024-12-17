@@ -4,6 +4,12 @@ import numpy as np
 
 from pdm4ar.exercises.ex12.saimon.polynomials import Quartic, Quintic
 
+KJ = 0.1
+KT = 0.1
+KD = 1e10
+KLAT = 1.0
+KLON = 1.0
+
 
 class Sample:
     def __init__(self):
@@ -20,6 +26,10 @@ class Sample:
         self.s_d = []
         self.s_dd = []
         self.s_ddd = []
+
+        self.cd = 0.0
+        self.cv = 0.0
+        self.cf = 0.0
 
 
 class FrenetSampler:
@@ -87,19 +97,28 @@ class FrenetSampler:
                     tfp.s_dd = [lon_qp.calc_second_derivative(t) for t in fp.t]
                     tfp.s_ddd = [lon_qp.calc_third_derivative(t) for t in fp.t]
 
+                    Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
+                    Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
+
+                    tfp.cd = KJ * Jp + KT * ti
+                    if tfp.d[-1] > self.road_res / 2 or tfp.d[-1] < -self.road_res / 2:
+                        tfp.cd += KD
+
+                    # tfp.cd = KJ * Jp + KT * ti + KD * tfp.d[-1] ** 2
+                    tfp.cv = KJ * Js + KT * ti
+                    tfp.cf = KLAT * tfp.cd + KLON * tfp.cv
+
                     self.last_samples.append(tfp)
 
         return self.last_samples
 
-    def assign_next_init_conditions(self, index: int) -> None:
-        """Assign the initial conditions given the optimal path index
+    def assign_next_init_conditions(self, index: int, replan_time: float = 3.5) -> None:
+        """Assign the initial conditions given the best path index
 
         Args:
             index (int): index of the optimal path from the last batch of samples
         """
-        # ! CAN BE CHANGED
-        # replan_time = 3.0
-        i = -1
+        i = int(replan_time / self.dt) - 1
 
         fp = self.last_samples[index]
         self.c_speed = fp.s_d[i]
