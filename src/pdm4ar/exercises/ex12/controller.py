@@ -136,9 +136,9 @@ class BasicController:
         self.i_gain = 6.0
         self.d_gain = 0.1
 
-        self.p_gain_psi = 4.0
-        self.i_gain_psi = 3.0
-        self.d_gain_psi = 0.1
+        self.p_gain_delta = 8.0
+        self.i_gain_delta = 0.5
+        self.d_gain_delta = 1.0
 
         self.psi_p_gain = 1.6
         self.psi_l_gain = 0.4
@@ -169,11 +169,13 @@ class BasicController:
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
         self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
 
+    def clear_viz(self):
+        plt.close(self.fig)
+
     def set_reference(self, target):
         self.target_traj = target
-        self.curr_idx = 0
-        plt.close(self.fig)
         self.fig, self.axes = plt.subplots(2, 1)
+        self.curr_idx = 0
         self.curr_states = []
         self.error_v = []
         self.error_psi = []
@@ -184,7 +186,8 @@ class BasicController:
         return np.argmin(np.hypot(dx, dy))
 
     def speed_control(self, curr_vx):
-        target = self.target_traj.values[self.curr_idx].vx
+        l_idx = min(self.curr_idx + 1, len(self.target_traj.values) - 1)
+        target = self.target_traj.values[l_idx].vx
         # print(target, curr_vx, self.sp.vx_limits[1])
         self.error_v.append(target - curr_vx)
         if len(self.error_v) > 1:
@@ -211,7 +214,8 @@ class BasicController:
         return min(self.curr_idx + 5, len(self.target_traj.values) - 1)
 
     def steer_control(self, curr_state):
-        target = self.target_traj.values[self.curr_idx]
+        l_idx = min(self.curr_idx + 1, len(self.target_traj.values) - 1)
+        target = self.target_traj.values[l_idx]
         # print(target, curr_vx, self.sp.vx_limits[1])
         psi_e = target.delta - curr_state.delta
         self.error_psi.append(psi_e)
@@ -220,7 +224,7 @@ class BasicController:
         else:
             d_error = 0
         i_error = sum(self.error_psi)
-        steering_angle = self.p_gain_psi * (psi_e) + self.d_gain_psi * d_error + self.i_gain_psi * i_error
+        steering_angle = self.p_gain_delta * (psi_e) + self.d_gain_delta * d_error + self.i_gain_delta * i_error
         steering_angle = np.clip(steering_angle, -self.sp.ddelta_max, self.sp.ddelta_max)
         # print(psi_e, target.delta, curr_state.delta, steering_angle, self.sp.ddelta_max)
         return steering_angle

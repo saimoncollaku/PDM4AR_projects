@@ -120,9 +120,8 @@ class Pdm4arAgent(Agent):
             road_generic = self.road["distance_to_other_lanelet"]
             c_d = current_frenet[0][1]
             s0 = current_frenet[0][0]
-            self.sampler = FrenetSampler(
-                self.sp.vx_limits[0], self.sp.vx_limits[1], road_l, road_r, road_generic, my_state.vx, c_d, 0, 0, s0
-            )
+            # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
+            self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, my_state.vx, c_d, 0, 0, s0)
 
         if np.isclose(float(sim_obs.time), 0) or np.isclose(float(sim_obs.time - self.past_t), self.replan_t):
             fp = self.sampler.get_paths_merge()
@@ -195,12 +194,14 @@ class Pdm4arAgent(Agent):
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
         self.controller.plot_controller_perf(self.past_t)
+        self.controller.clear_viz()
 
         return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)
 
     def check_paths(self, fplist) -> int:
 
-        MAX_SPEED = self.sp.vx_limits[1]  # maximum speed [m/s]
+        MAX_SPEED = 25  # maximum speed [m/s]
+        MIN_SPEED = 5
         MAX_ACCEL = self.sp.acc_limits[1]  # maximum acceleration [m/ss]
         MAX_CURVATURE = np.tan(self.sp.delta_max) / self.sg.length  # maximum curvature [1/m]
         # MAX_CURVATURE = 1
@@ -211,6 +212,8 @@ class Pdm4arAgent(Agent):
 
             if any([v > MAX_SPEED for v in fplist[i].s_d]):  # Max speed check
                 continue
+            # if any([v < MIN_SPEED for v in fplist[i].s_d]):
+            # continue
             elif any([abs(a) > MAX_ACCEL for a in fplist[i].s_dd]):  # Max accel check
                 continue
             elif any([abs(c) > MAX_CURVATURE for c in curv]):  # Max curvature check
