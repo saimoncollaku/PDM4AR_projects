@@ -3,6 +3,8 @@
 # Collision & trajectory check
 # Score candidate trajectories - cost functions, kinematic check & collision check > Behaviour, Velocity, Occlusion Planner
 
+from mimetypes import init
+from multiprocessing import connection
 import numpy as np
 from scipy import constants
 from scipy.integrate import simpson
@@ -66,11 +68,32 @@ class KinematicsFilter:
 
 
 class CollisionFilter:
-    def __init__(self):
-        pass
+    def __init__(self, init_obs):
+        self.name = init_obs.my_name
+        self.sg = init_obs.model_geometry
+        self.dist = (
+            max(np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf) ** 2), np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr) ** 2))
+            + 0.1
+        )
 
-    def check(self):
-        raise NotImplementedError()
+    def check(self, trajectory: TrajectorySample, sim_obs):
+        self.__trajectory = trajectory
+        collides = False
+        for player in sim_obs.players:
+            if player != self.name:
+                collides = self.collision_filter(sim_obs.players[player].state)
+                if collides:
+                    break
+        return collides
+
+    def collision_filter(self, obs_state):
+        for i in range(self.__trajectory.T):
+            pt_x, pt_y = self.__trajectory.x[i], self.__trajectory.y[i]
+            obs_x = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
+            obs_y = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+            dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
+            if dist <= self.dist:
+                return True
 
 
 class Cost:
@@ -137,7 +160,8 @@ class Cost:
             if player != self.name:
                 obs_state = self.__observations.players[player].state
                 obs_init = np.stack([obs_state.x, obs_state.y], axis=1)
-                obs_pos = obs_init + obs_state.v * ts
+                obs_vel = np.stack([obs_state.v * np.cos(obs_state.psi), obs_state.v * np.sin(obs_state.psi)], axis=1)
+                obs_pos = obs_init + obs_vel * ts
                 dist = np.linalg.norm(obs_pos - player_pos, 2)
                 cost += simpson(1 / (dist**2), dx=self.__trajectory.dt)
         return cost
