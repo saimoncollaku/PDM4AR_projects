@@ -134,11 +134,11 @@ class BasicController:
         self.sg = vehicle_geom
         self.p_gain = 8.0
         self.i_gain = 6.0
-        self.d_gain = 0.1
+        self.d_gain = 2.0
 
-        self.p_gain_delta = 8.0
+        self.p_gain_delta = 10.0
         self.i_gain_delta = 0.5
-        self.d_gain_delta = 1.0
+        self.d_gain_delta = 4.0
 
         self.psi_p_gain = 1.6
         self.psi_l_gain = 0.4
@@ -159,14 +159,25 @@ class BasicController:
         self.axes[0].plot(
             self.target_traj.timestamps[: len(self.curr_states)], [v[0] for v in self.curr_states], c="b", label="v"
         )
+        self.axes[0].plot(
+            [self.target_traj.timestamps[self.curr_idx], self.target_traj.timestamps[self.curr_idx]],
+            [target_states[self.curr_idx][0], self.curr_states[-1][0]],
+            marker="x",
+        )
         # self.axes[0].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_v, c="k")
 
         self.axes[1].plot(self.target_traj.timestamps, [v[1] for v in target_states], c="r")
         self.axes[1].plot(
             self.target_traj.timestamps[: len(self.curr_states)], [v[1] for v in self.curr_states], c="b", label="psi"
         )
-        self.axes[1].plot(self.target_traj.timestamps[self.curr_idx], target_states[self.curr_idx][1], marker="x")
+        self.axes[1].plot(
+            [self.target_traj.timestamps[self.curr_idx], self.target_traj.timestamps[self.curr_idx]],
+            [target_states[self.curr_idx][1], self.curr_states[-1][1]],
+            marker="x",
+        )
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
+        self.axes[0].autoscale()
+        self.axes[1].autoscale()
         self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
 
     def clear_viz(self):
@@ -184,6 +195,10 @@ class BasicController:
         dx = [state.x - curr_state.x for state in self.target_traj.values]
         dy = [state.y - curr_state.y for state in self.target_traj.values]
         return np.argmin(np.hypot(dx, dy))
+
+    def update_progress_time(self, t):
+        dt = [abs(ts - t) for ts in self.target_traj.timestamps]
+        return np.argmin(dt)
 
     def speed_control(self, curr_vx):
         l_idx = min(self.curr_idx + 1, len(self.target_traj.values) - 1)
@@ -265,7 +280,7 @@ class BasicController:
         acc = self.speed_control(curr_state.vx)
         ddelta = self.steer_control(curr_state)
         # ddelta = 0
-        self.curr_idx = self.update_progress(curr_state)
+        self.curr_idx = self.update_progress_time(float(t))
         # print("curr_state: ", curr_state.vx, curr_state.psi)
         # print(acc, ddelta)
         return acc, ddelta

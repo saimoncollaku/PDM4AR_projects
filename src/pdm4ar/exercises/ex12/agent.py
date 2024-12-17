@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import isclose
 import numpy as np
 import logging
 
@@ -65,6 +66,7 @@ class Pdm4arAgent(Agent):
         # * SAIMON PARAMS
         self.last_replan_time = 0
         self.replan_t = 99
+        self.best_fp = None
 
     def on_episode_init(self, init_obs: InitSimObservations):
         """This method is called by the simulator only at the beginning of each simulation.
@@ -96,6 +98,7 @@ class Pdm4arAgent(Agent):
 
         self.all_timesteps = []
         self.all_states = []
+        self.plans = []
 
     def create_sampler(self, current_state: VehicleState):
         current_cart = np.column_stack((current_state.x, current_state.y))
@@ -133,12 +136,12 @@ class Pdm4arAgent(Agent):
 
         cp = self.spline_ref.to_cartesian(all_samples[best_path_index])
 
-        timestamps = list(cp[1])
+        timestamps = list(cp[1] + current_time)
         psi_vals = [
             (
                 np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
                 if i < cp[0].shape[0] - 1 and i > 0
-                else current_state.psi
+                else 0
             )
             for i in range(cp[0].shape[0])
         ]
@@ -151,12 +154,14 @@ class Pdm4arAgent(Agent):
                 (
                     np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
                     if i < cp[0].shape[0] - 1 and i > 0
-                    else current_state.delta
+                    else 0
                 ),
             )
             for i in range(cp[0].shape[0])
         ]
+        states[0] = current_state
         self.agent_traj = Trajectory(timestamps, states)
+        self.plans.append(self.agent_traj)
         self.controller.set_reference(self.agent_traj)
         self.last_replan_time = current_time
 
@@ -209,7 +214,9 @@ class Pdm4arAgent(Agent):
             # self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)
-        self.visualizer.plot_trajectories([my_traj, self.agent_traj], colors=["firebrick", "green"])
+        self.visualizer.plot_trajectories(
+            [my_traj, *self.plans], colors=["firebrick", *["green" for plan in self.plans]]
+        )
         self.visualizer.save_fig()
 
         # rnd_acc = random.random() * self.params.param1 * 0
@@ -254,63 +261,3 @@ class Pdm4arAgent(Agent):
                 bestpath = i
 
         return bestpath, mincost
-
-
-# def plot_lanelets_and_path(lanelet_network: LaneletNetwork, path: np.ndarray, reference_trajectory: np.ndarray) -> None:
-#     """
-#     Plot all lanelets in the lanelet network, a given path, and a reference trajectory.
-
-#     :param lanelet_network: The LaneletNetwork containing all lanelets.
-#     :param path: A numpy array representing the XY path. Shape should be (n, 2).
-#     :param reference_trajectory: A numpy array representing the reference trajectory. Shape should be (n, 2).
-#     """
-#     plt.figure(figsize=(10, 10))
-
-#     # Plot all lanelets
-#     for lanelet in lanelet_network.lanelets:
-#         center_vertices = lanelet.center_vertices
-#         plt.plot(center_vertices[:, 0], center_vertices[:, 1], label=f"Lanelet {lanelet.lanelet_id}", alpha=0.7)
-#         plt.scatter(
-#             center_vertices[0, 0],
-#             center_vertices[0, 1],
-#             color="red",
-#             label="Lanelet Start" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
-#         )
-#         plt.scatter(
-#             center_vertices[-1, 0],
-#             center_vertices[-1, 1],
-#             color="blue",
-#             label="Lanelet End" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
-#         )
-
-#     # Plot the path
-#     plt.plot(path[:, 0], path[:, 1], color="black", linestyle="--", linewidth=2, label="Path")
-#     plt.scatter(path[0, 0], path[0, 1], color="green", label="Path Start Point")
-#     plt.scatter(path[-1, 0], path[-1, 1], color="orange", label="Path End Point")
-
-#     # Plot the reference trajectory
-#     plt.plot(
-#         reference_trajectory[:, 0],
-#         reference_trajectory[:, 1],
-#         color="purple",
-#         linewidth=2,
-#         linestyle=":",
-#         label="Reference Trajectory",
-#     )
-#     plt.scatter(
-#         reference_trajectory[0, 0], reference_trajectory[0, 1], color="purple", marker="s", label="Ref Start Point"
-#     )
-#     plt.scatter(
-#         reference_trajectory[-1, 0], reference_trajectory[-1, 1], color="purple", marker="x", label="Ref End Point"
-#     )
-
-#     # Final Plot Settings
-#     plt.xlabel("X-coordinate")
-#     plt.ylabel("Y-coordinate")
-#     plt.title("Lanelets, Path, and Reference Trajectory")
-#     plt.legend()
-#     plt.grid(True)
-#     plt.axis("equal")
-#     plt.show()
-
-#     plt.savefig("ciccino")
