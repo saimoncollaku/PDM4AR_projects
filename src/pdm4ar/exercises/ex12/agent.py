@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import isclose
 import numpy as np
 import logging
 
@@ -62,6 +63,7 @@ class Pdm4arAgent(Agent):
         # * SAIMON PARAMS
         self.last_replan_time = 0
         self.replan_t = 99
+        self.best_fp = None
 
     def on_episode_init(self, init_obs: InitSimObservations):
         """This method is called by the simulator only at the beginning of each simulation.
@@ -104,6 +106,13 @@ class Pdm4arAgent(Agent):
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 
     def trigger_replan(self, current_state: VehicleState, current_time: float):
+        if not np.isclose(current_time, 0):
+            current_cart = np.column_stack((current_state.x, current_state.y))
+            current_frenet = self.spline_ref.to_frenet(current_cart)
+            c_d = current_frenet[0][1]
+            s0 = current_frenet[0][0]
+            c_speed = current_state.vx
+            self.sampler.assign_init_pos(s0, c_d, c_speed)
         fp = self.sampler.get_paths_merge()
         logger.warning("Sampled {} paths".format(len(fp)))
 
@@ -112,10 +121,10 @@ class Pdm4arAgent(Agent):
 
         best_path_index, min_cost = self.check_paths(fp)
         logger.warning("Picked up {}th path with cost {}".format(best_path_index, min_cost))
+        # Assignment of the next initial conditions
         self.replan_t = fp[best_path_index].t[-1]
-        self.sampler.assign_next_init_conditions(best_path_index, self.replan_t)
-
         cp = self.spline_ref.to_cartesian(fp[best_path_index])
+        self.sampler.assign_init_speed(best_path_index, self.replan_t)
 
         timestamps = list(cp[1])
         psi_vals = [
@@ -231,70 +240,9 @@ class Pdm4arAgent(Agent):
 
         bestpath = 0
         mincost = np.inf
-        # fp = [fplist[i] for i in feasibles]
         for i in feasibles:
             if mincost >= fplist[i].cf:
                 mincost = fplist[i].cf
                 bestpath = i
 
         return bestpath, mincost
-
-
-# def plot_lanelets_and_path(lanelet_network: LaneletNetwork, path: np.ndarray, reference_trajectory: np.ndarray) -> None:
-#     """
-#     Plot all lanelets in the lanelet network, a given path, and a reference trajectory.
-
-#     :param lanelet_network: The LaneletNetwork containing all lanelets.
-#     :param path: A numpy array representing the XY path. Shape should be (n, 2).
-#     :param reference_trajectory: A numpy array representing the reference trajectory. Shape should be (n, 2).
-#     """
-#     plt.figure(figsize=(10, 10))
-
-#     # Plot all lanelets
-#     for lanelet in lanelet_network.lanelets:
-#         center_vertices = lanelet.center_vertices
-#         plt.plot(center_vertices[:, 0], center_vertices[:, 1], label=f"Lanelet {lanelet.lanelet_id}", alpha=0.7)
-#         plt.scatter(
-#             center_vertices[0, 0],
-#             center_vertices[0, 1],
-#             color="red",
-#             label="Lanelet Start" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
-#         )
-#         plt.scatter(
-#             center_vertices[-1, 0],
-#             center_vertices[-1, 1],
-#             color="blue",
-#             label="Lanelet End" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
-#         )
-
-#     # Plot the path
-#     plt.plot(path[:, 0], path[:, 1], color="black", linestyle="--", linewidth=2, label="Path")
-#     plt.scatter(path[0, 0], path[0, 1], color="green", label="Path Start Point")
-#     plt.scatter(path[-1, 0], path[-1, 1], color="orange", label="Path End Point")
-
-#     # Plot the reference trajectory
-#     plt.plot(
-#         reference_trajectory[:, 0],
-#         reference_trajectory[:, 1],
-#         color="purple",
-#         linewidth=2,
-#         linestyle=":",
-#         label="Reference Trajectory",
-#     )
-#     plt.scatter(
-#         reference_trajectory[0, 0], reference_trajectory[0, 1], color="purple", marker="s", label="Ref Start Point"
-#     )
-#     plt.scatter(
-#         reference_trajectory[-1, 0], reference_trajectory[-1, 1], color="purple", marker="x", label="Ref End Point"
-#     )
-
-#     # Final Plot Settings
-#     plt.xlabel("X-coordinate")
-#     plt.ylabel("Y-coordinate")
-#     plt.title("Lanelets, Path, and Reference Trajectory")
-#     plt.legend()
-#     plt.grid(True)
-#     plt.axis("equal")
-#     plt.show()
-
-#     plt.savefig("ciccino")
