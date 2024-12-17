@@ -71,8 +71,12 @@ class CollisionFilter:
     def __init__(self, init_obs):
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
+        # can only assume all cars have same geometry
         self.dist = (
-            max(np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf) ** 2), np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr) ** 2))
+            2
+            * max(
+                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf) ** 2), np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr) ** 2)
+            )
             + 0.1
         )
 
