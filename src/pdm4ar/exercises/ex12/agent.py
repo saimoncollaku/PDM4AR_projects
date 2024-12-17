@@ -59,6 +59,8 @@ class Pdm4arAgent(Agent):
         self.road = None
         self.spline_ref = None
         self.samplet = None
+        self.past_t = 0
+        self.replan_t = 99
 
     def on_episode_init(self, init_obs: InitSimObservations):
         """This method is called by the simulator only at the beginning of each simulation.
@@ -75,7 +77,9 @@ class Pdm4arAgent(Agent):
         reference_points, target_lanelet_id = obtain_complete_ref(init_obs)
         self.road = get_lanelet_distances(init_obs.dg_scenario.lanelet_network, target_lanelet_id)
         self.spline_ref = SplineReference()
-        self.spline_ref.obtain_reference_traj(reference_points, resolution=1e7)
+        x, y, _, _ = self.spline_ref.obtain_reference_traj(reference_points, resolution=1e5)
+        self.ref = np.column_stack((x, y))
+        self.ln = init_obs.dg_scenario.lanelet_network
 
         # initialize planner from planner.py
         # initial state, goal state, dynamics parameters
@@ -105,18 +109,111 @@ class Pdm4arAgent(Agent):
             road_generic = self.road["distance_to_other_lanelet"]
             c_d = current_frenet[0][1]
             s0 = current_frenet[0][0]
-            self.sampler = FrenetSampler(10, 50, road_l, road_r, road_generic, my_state.vx, c_d, 0, 0, s0)
+            self.sampler = FrenetSampler(
+                self.sp.vx_limits[0], self.sp.vx_limits[1], road_l, road_r, road_generic, my_state.vx, c_d, 0, 0, s0
+            )
 
-        if np.isclose(float(sim_obs.time) % 3.5, 0):
+        if np.isclose(float(sim_obs.time), 0) or np.isclose(float(sim_obs.time - self.past_t), self.replan_t):
             fp = self.sampler.get_paths_merge()
             # TODO perform feasibility, cost and collision check
             # (iterate through all)
-            cp = self.spline_ref.to_cartesian(fp[5])
             # TODO find best path
-            best_path_index = 5
-            self.sampler.assign_next_init_conditions(best_path_index)
+            bestpath = self.check_paths(fp)
+            self.replan_t = fp[bestpath].t[-1]
+            self.past_t = sim_obs.time
+            self.sampler.assign_next_init_conditions(bestpath, self.replan_t)
 
         rnd_acc = random.random() * self.params.param1 * 0
         rnd_ddelta = (random.random() - 0.5) * self.params.param1 * 0
 
         return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
+
+    def check_paths(self, fplist) -> int:
+
+        MAX_SPEED = self.sp.vx_limits[1]  # maximum speed [m/s]
+        MAX_ACCEL = self.sp.acc_limits[1]  # maximum acceleration [m/ss]
+        MAX_CURVATURE = np.tan(self.sp.delta_max) / self.sg.length  # maximum curvature [1/m]
+        # MAX_CURVATURE = 1
+
+        feasibles = []
+        for i in range(len(fplist)):
+            _, _, _, _, curv = self.spline_ref.to_cartesian(fplist[i])
+
+            if any([v > MAX_SPEED for v in fplist[i].s_d]):  # Max speed check
+                continue
+            elif any([abs(a) > MAX_ACCEL for a in fplist[i].s_dd]):  # Max accel check
+                continue
+            elif any([abs(c) > MAX_CURVATURE for c in curv]):  # Max curvature check
+                continue
+
+            feasibles.append(i)
+
+        bestpath = 0
+        mincost = np.inf
+        fp = [fplist[i] for i in feasibles]
+        for i, _ in enumerate(fp):
+            if mincost >= fp[i].cf:
+                mincost = fp[i].cf
+                bestpath = feasibles[i]
+
+        return bestpath
+
+
+# def plot_lanelets_and_path(lanelet_network: LaneletNetwork, path: np.ndarray, reference_trajectory: np.ndarray) -> None:
+#     """
+#     Plot all lanelets in the lanelet network, a given path, and a reference trajectory.
+
+#     :param lanelet_network: The LaneletNetwork containing all lanelets.
+#     :param path: A numpy array representing the XY path. Shape should be (n, 2).
+#     :param reference_trajectory: A numpy array representing the reference trajectory. Shape should be (n, 2).
+#     """
+#     plt.figure(figsize=(10, 10))
+
+#     # Plot all lanelets
+#     for lanelet in lanelet_network.lanelets:
+#         center_vertices = lanelet.center_vertices
+#         plt.plot(center_vertices[:, 0], center_vertices[:, 1], label=f"Lanelet {lanelet.lanelet_id}", alpha=0.7)
+#         plt.scatter(
+#             center_vertices[0, 0],
+#             center_vertices[0, 1],
+#             color="red",
+#             label="Lanelet Start" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
+#         )
+#         plt.scatter(
+#             center_vertices[-1, 0],
+#             center_vertices[-1, 1],
+#             color="blue",
+#             label="Lanelet End" if lanelet.lanelet_id == lanelet_network.lanelets[0].lanelet_id else None,
+#         )
+
+#     # Plot the path
+#     plt.plot(path[:, 0], path[:, 1], color="black", linestyle="--", linewidth=2, label="Path")
+#     plt.scatter(path[0, 0], path[0, 1], color="green", label="Path Start Point")
+#     plt.scatter(path[-1, 0], path[-1, 1], color="orange", label="Path End Point")
+
+#     # Plot the reference trajectory
+#     plt.plot(
+#         reference_trajectory[:, 0],
+#         reference_trajectory[:, 1],
+#         color="purple",
+#         linewidth=2,
+#         linestyle=":",
+#         label="Reference Trajectory",
+#     )
+#     plt.scatter(
+#         reference_trajectory[0, 0], reference_trajectory[0, 1], color="purple", marker="s", label="Ref Start Point"
+#     )
+#     plt.scatter(
+#         reference_trajectory[-1, 0], reference_trajectory[-1, 1], color="purple", marker="x", label="Ref End Point"
+#     )
+
+#     # Final Plot Settings
+#     plt.xlabel("X-coordinate")
+#     plt.ylabel("Y-coordinate")
+#     plt.title("Lanelets, Path, and Reference Trajectory")
+#     plt.legend()
+#     plt.grid(True)
+#     plt.axis("equal")
+#     plt.show()
+
+#     plt.savefig("ciccino")

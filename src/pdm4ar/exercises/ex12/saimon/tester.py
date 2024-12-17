@@ -34,7 +34,6 @@ def main():
     frenet_points = np.column_stack((fp[5].s, fp[5].d))
     path_points = spline_ref.to_cartesian(frenet_points)
     # 6- assign the initial conditions from 2 given the best path
-    sampler.assign_init_conditions(5)
     # * ****************************************************************
 
     plt.figure(figsize=(12, 5))
