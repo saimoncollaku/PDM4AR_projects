@@ -93,6 +93,7 @@ class Pdm4arAgent(Agent):
 
         self.all_timesteps = []
         self.all_states = []
+        self.plans = []
 
     def create_sampler(self, current_state: VehicleState):
         current_cart = np.column_stack((current_state.x, current_state.y))
@@ -126,12 +127,12 @@ class Pdm4arAgent(Agent):
         cp = self.spline_ref.to_cartesian(fp[best_path_index])
         self.sampler.assign_init_speed(best_path_index, self.replan_t)
 
-        timestamps = list(cp[1])
+        timestamps = list(cp[1] + current_time)
         psi_vals = [
             (
                 np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
                 if i < cp[0].shape[0] - 1 and i > 0
-                else current_state.psi
+                else 0
             )
             for i in range(cp[0].shape[0])
         ]
@@ -144,12 +145,14 @@ class Pdm4arAgent(Agent):
                 (
                     np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
                     if i < cp[0].shape[0] - 1 and i > 0
-                    else current_state.delta
+                    else 0
                 ),
             )
             for i in range(cp[0].shape[0])
         ]
+        states[0] = current_state
         self.agent_traj = Trajectory(timestamps, states)
+        self.plans.append(self.agent_traj)
         self.controller.set_reference(self.agent_traj)
         self.last_replan_time = current_time
 
@@ -202,7 +205,9 @@ class Pdm4arAgent(Agent):
             # self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)
-        self.visualizer.plot_trajectories([my_traj, self.agent_traj], colors=["firebrick", "green"])
+        self.visualizer.plot_trajectories(
+            [my_traj, *self.plans], colors=["firebrick", *["green" for plan in self.plans]]
+        )
         self.visualizer.save_fig()
 
         # rnd_acc = random.random() * self.params.param1 * 0
