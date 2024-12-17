@@ -136,17 +136,25 @@ class Pdm4arAgent(Agent):
             cp = self.spline_ref.to_cartesian(fp[best_path_index])
 
             timestamps = list(cp[1])
+            psi_vals = [
+                (
+                    np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
+                    if i < cp[0].shape[0] - 1 and i > 0
+                    else my_state.psi
+                )
+                for i in range(cp[0].shape[0])
+            ]
             states = [
                 VehicleState(
                     cp[0][i][0],
                     cp[0][i][1],
-                    (
-                        np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
-                        if i < cp[0].shape[0] - 1
-                        else my_state.psi
-                    ),
+                    psi_vals[i],
                     cp[2][i],
-                    0,
+                    (
+                        np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
+                        if i < cp[0].shape[0] - 1 and i > 0
+                        else my_state.delta
+                    ),
                 )
                 for i in range(cp[0].shape[0])
             ]
@@ -186,6 +194,7 @@ class Pdm4arAgent(Agent):
 
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
+        self.controller.plot_controller_perf(self.past_t)
 
         return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)
 
@@ -211,11 +220,11 @@ class Pdm4arAgent(Agent):
 
         bestpath = 0
         mincost = np.inf
-        fp = [fplist[i] for i in feasibles]
-        for i, _ in enumerate(fp):
-            if mincost >= fp[i].cf:
-                mincost = fp[i].cf
-                bestpath = feasibles[i]
+        # fp = [fplist[i] for i in feasibles]
+        for i in feasibles:
+            if mincost >= fplist[i].cf:
+                mincost = fplist[i].cf
+                bestpath = i
 
         return bestpath
 
