@@ -75,7 +75,8 @@ class CollisionFilter:
         self.dist = (
             2
             * max(
-                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf) ** 2), np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr) ** 2)
+                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf / 2) ** 2),
+                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr / 2) ** 2),
             )
             + 0.1
         )
