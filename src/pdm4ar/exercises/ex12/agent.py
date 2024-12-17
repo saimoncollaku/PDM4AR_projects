@@ -25,6 +25,7 @@ from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import get_lanelet_distances
 from pdm4ar.exercises.ex12.controller import BasicController as Controller
+from pdm4ar.exercises.ex12.trajectory_evalulator import Evaluator
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -53,6 +54,8 @@ class Pdm4arAgent(Agent):
     visualizer: Visualizer
     all_timesteps: list[SimTime]
     all_states: list[VehicleState]
+    controller: Controller
+    evaluator: Evaluator
 
     def __init__(self):
         # feel free to remove/modify  the following
@@ -78,7 +81,7 @@ class Pdm4arAgent(Agent):
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
 
-        self.lanelet_network = init_obs.dg_scenario.lanelet_network
+        # self.lanelet_network = init_obs.dg_scenario.lanelet_network
         self.visualizer = Visualizer(init_obs)
         self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
 
@@ -88,6 +91,8 @@ class Pdm4arAgent(Agent):
 
         self.planner = Planner()
         self.controller = Controller(self.sp, self.sg)
+
+        self.evaluator = Evaluator(init_obs, self.spline_ref, self.sp, self.sg)
 
         self.all_timesteps = []
         self.all_states = []
@@ -103,19 +108,30 @@ class Pdm4arAgent(Agent):
         # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 
-    def trigger_replan(self, current_state: VehicleState, current_time: float):
-        fp = self.sampler.get_paths_merge()
-        logger.warning("Sampled {} paths".format(len(fp)))
+    def trigger_replan(self, sim_obs: SimObservations):
+        current_state = sim_obs.players[self.name].state
+        current_time = float(sim_obs.time)
+        assert isinstance(current_state, VehicleState)
 
-        # TODO perform feasibility, cost and collision check
-        # (iterate through all)
+        all_samples = self.sampler.get_paths_merge()
+        logger.warning("Sampled {} paths".format(len(all_samples)))
 
-        best_path_index, min_cost = self.check_paths(fp)
-        logger.warning("Picked up {}th path with cost {}".format(best_path_index, min_cost))
-        self.replan_t = fp[best_path_index].t[-1]
+        best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
+        list_costs = sorted(costs.tolist())
+        min_cost = costs[best_path_index]
+        best_path = all_samples[best_path_index]
+        # best_path_index, min_cost = self.check_paths(all_samples)
+        logger.warning("Least 3 costs: {}".format(list_costs[0:3]))
+        logger.warning(
+            "Path {}: cost {}, kinematics_feasible: {}, collision_free: {}".format(
+                best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free
+            )
+        )
+
+        self.replan_t = best_path.t[-1]
         self.sampler.assign_next_init_conditions(best_path_index, self.replan_t)
 
-        cp = self.spline_ref.to_cartesian(fp[best_path_index])
+        cp = self.spline_ref.to_cartesian(all_samples[best_path_index])
 
         timestamps = list(cp[1])
         psi_vals = [
@@ -166,7 +182,7 @@ class Pdm4arAgent(Agent):
             self.create_sampler(my_state)
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
-            self.trigger_replan(my_state, current_time)
+            self.trigger_replan(sim_obs)
 
             # self.visualizer.plot_scenario(sim_obs)
             # trajectories = []
@@ -231,7 +247,7 @@ class Pdm4arAgent(Agent):
 
         bestpath = 0
         mincost = np.inf
-        # fp = [fplist[i] for i in feasibles]
+        # all_samples = [fplist[i] for i in feasibles]
         for i in feasibles:
             if mincost >= fplist[i].cf:
                 mincost = fplist[i].cf

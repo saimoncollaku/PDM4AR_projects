@@ -70,7 +70,7 @@ class SplineReference:
 
         return np.array(frenet_points)
 
-    def __get_xy(self, sample: Sample):
+    def get_xy(self, sample: Sample):
         cartesian_points = np.zeros((len(sample.t), 2))
         # Precompute cumulative lengths of the reference trajectory
         cumulative_lengths = np.cumsum(np.sqrt(np.diff(self.x) ** 2 + np.diff(self.y) ** 2))
@@ -80,7 +80,7 @@ class SplineReference:
         dx = np.gradient(self.x)
         dy = np.gradient(self.y)
 
-        for i, (s, d, d_d, s_d) in enumerate(zip(sample.s, sample.d, sample.d_d, sample.s_d)):
+        for i, (s, d) in enumerate(zip(sample.s, sample.d)):
             # Find the closest point on the reference trajectory for the given s
             idx = np.argmin(np.abs(cumulative_lengths - s))
             if idx < len(self.x) - 1:
@@ -98,10 +98,22 @@ class SplineReference:
             cartesian_points[i, :] = cartesian_point
         return cartesian_points
 
-    def __get_xy_dot(self, cartesian_points: np.ndarray, t: np.ndarray):
-        cart_dx = np.gradient(cartesian_points[:, 0])
-        cart_dy = np.gradient(cartesian_points[:, 1])
-        # TODO
+    def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
+        cart_grad: np.ndarray = np.gradient(cartesian_points, axis=0)
+        cartesian_vel = np.zeros((len(time_grad), 2))
+        cartesian_vel[:, 0] = cart_grad[:, 0] / time_grad
+        cartesian_vel[:, 1] = cart_grad[:, 1] / time_grad
+        return cartesian_vel
+
+    def get_xy_dotdot(self, cartesian_vel: np.ndarray, time_grad: np.ndarray):
+        return self.get_xy_dot(cartesian_vel, time_grad)
+
+    def get_xy_dotdotdot(self, cartesian_acc: np.ndarray, time_grad: np.ndarray):
+        return self.get_xy_dot(cartesian_acc, time_grad)
+
+    def get_kappadot(self, kappa: np.ndarray, time_grad: np.ndarray):
+        kappa_grad: np.ndarray = np.gradient(kappa)
+        return kappa_grad / time_grad
 
     def to_cartesian(self, sample: Sample) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -119,11 +131,11 @@ class SplineReference:
             - Orientations (theta) for each time step
             - Curvatures (kappa) for each time step
         """
-        vx_values = []
-        theta_values = []
-        kappa_values = []
+        vx_values = np.zeros(len(sample.t))
+        theta_values = np.zeros(len(sample.t))
+        kappa_values = np.zeros(len(sample.t))
 
-        cartesian_points = self.__get_xy(sample)
+        cartesian_points = self.get_xy(sample)
 
         # Compute curvature and orientation for the Cartesian points
         cart_dx = np.gradient(cartesian_points[:, 0])
@@ -136,27 +148,31 @@ class SplineReference:
             num = np.abs(cart_dx[i] * cart_d2y[i] - cart_dy[i] * cart_d2x[i])
             den = (cart_dx[i] ** 2 + cart_dy[i] ** 2) ** (3 / 2)
             kappa = num / den if den != 0 else 0.0
-            kappa_values.append(kappa)
+            kappa_values[i] = kappa
 
             # Compute longitudinal velocity (v_x)
             vx = np.sqrt(((1 - kappa * sample.d[i]) ** 2) * sample.s_d[i] ** 2 + sample.d_d[i] ** 2)
-            vx_values.append(vx)
+            vx_values[i] = vx
 
             # Compute orientation (theta)
             theta_c = np.arctan2(cart_dy[i], cart_dx[i])  # Direction of Cartesian trajectory
             delta_theta = np.arctan2(sample.d_d[i], sample.s_d[i] * (1 - kappa * sample.d[i]))  # Aθ
             theta = delta_theta + theta_c
-            theta_values.append(theta)
+            theta_values[i] = theta
 
         cart_dx = np.gradient(cartesian_points[:, 0])
         cart_dy = np.gradient(cartesian_points[:, 1])
 
         # Compute orientation (theta) for each point
         theta_values = np.arctan2(cart_dy, cart_dx)
+        sample.x = cartesian_points[:, 0]
+        sample.y = cartesian_points[:, 1]
+        sample.kappa = kappa_values
+
         return (
-            np.array(cartesian_points),
-            np.array(sample.t),
-            np.array(vx_values),
-            np.array(theta_values),
-            np.array(kappa_values),
+            cartesian_points,
+            sample.t,
+            vx_values,
+            theta_values,
+            kappa_values,
         )

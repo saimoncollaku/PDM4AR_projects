@@ -13,6 +13,7 @@ KLON = 1.0
 
 class Sample:
     dt: float
+    T: int
     x: np.ndarray
     xdot: np.ndarray
     xdotdot: np.ndarray
@@ -24,9 +25,12 @@ class Sample:
     kappa: np.ndarray
     kappadot: np.ndarray
 
-    def __init__(self):
-        self.t = []
+    t: np.ndarray
+    kinematics_feasible: bool
+    collision_free: bool
+    cost: float
 
+    def __init__(self):
         # Lateral
         self.d = []
         self.d_d = []
@@ -38,6 +42,13 @@ class Sample:
         self.s_d = []
         self.s_dd = []
         self.s_ddd = []
+
+        self.x = None
+        self.y = None
+        self.kappa = None
+        self.kinematics_feasible = False
+        self.collision_free = False
+        self.cost = np.inf
 
         self.cd = 0.0
         self.cv = 0.0
@@ -81,7 +92,7 @@ class FrenetSampler:
         self.min_t = 3.0
 
     # TODO, its possible that we need to make another path maker for low speed
-    def get_paths_merge(self):
+    def get_paths_merge(self) -> list[Sample]:
         self.last_samples = []
 
         # Lateral sampling
@@ -93,7 +104,8 @@ class FrenetSampler:
 
                 lat_qp = Quintic(self.c_d, self.c_d_d, self.c_d_dd, di, 0.0, 0.0, ti)
 
-                fp.t = [t for t in np.arange(0.0, ti, self.dt)]
+                fp.dt = self.dt
+                fp.t = np.arange(0.0, ti, self.dt)
                 fp.d = [lat_qp.calc_point(t) for t in fp.t]
                 fp.d_d = [lat_qp.calc_first_derivative(t) for t in fp.t]
                 fp.d_dd = [lat_qp.calc_second_derivative(t) for t in fp.t]
@@ -119,6 +131,8 @@ class FrenetSampler:
                     # tfp.cd = KJ * Jp + KT * ti + KD * tfp.d[-1] ** 2
                     tfp.cv = KJ * Js + KT * ti
                     tfp.cf = KLAT * tfp.cd + KLON * tfp.cv
+
+                    tfp.T = len(tfp.t)
 
                     self.last_samples.append(tfp)
 
