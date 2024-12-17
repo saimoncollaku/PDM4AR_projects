@@ -91,6 +91,8 @@ def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> tu
         """Find the leftmost lanelet by iterating adj_left until None."""
         current_lanelet = start_lanelet
         while current_lanelet.adj_left:
+            if not current_lanelet.adj_left_same_direction:
+                break
             current_lanelet = lanelet_network.find_lanelet_by_id(current_lanelet.adj_left)
         return current_lanelet
 
@@ -98,6 +100,8 @@ def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> tu
         """Find the rightmost lanelet by iterating adj_right until None."""
         current_lanelet = start_lanelet
         while current_lanelet.adj_right:
+            if not current_lanelet.adj_right_same_direction:
+                break
             current_lanelet = lanelet_network.find_lanelet_by_id(current_lanelet.adj_right)
         return current_lanelet
 
