@@ -1,9 +1,6 @@
-import random
 from dataclasses import dataclass
-import time
-from typing import Sequence
 import numpy as np
-from typing import List, Tuple
+import logging
 
 from commonroad.scenario.lanelet import LaneletNetwork, Lanelet
 from dg_commons import PlayerName
@@ -23,12 +20,14 @@ from pdm4ar.exercises.ex12.visualization import Visualizer
 from pdm4ar.exercises.ex12.planner import Planner
 import matplotlib.pyplot as plt
 
-# * SAIMON IMPORTS
-from pdm4ar.exercises.ex12.saimon.b_spline import SplineReference
-from pdm4ar.exercises.ex12.saimon.frenet_sampler import FrenetSampler
-from pdm4ar.exercises.ex12.saimon.sim_env_coesion import obtain_complete_ref
-from pdm4ar.exercises.ex12.saimon.sim_env_coesion import get_lanelet_distances
+from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
+from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
+from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref
+from pdm4ar.exercises.ex12.sampler.sim_env_coesion import get_lanelet_distances
 from pdm4ar.exercises.ex12.controller import BasicController as Controller
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s: %(message)s")
 
 
 @dataclass(frozen=True)
@@ -46,6 +45,10 @@ class Pdm4arAgent(Agent):
     sg: VehicleGeometry
     sp: VehicleParameters
     planner: Planner
+    sampler: FrenetSampler
+
+    road_distances: tuple[float, float, float]
+    spline_ref: SplineReference
 
     visualizer: Visualizer
     all_timesteps: list[SimTime]
@@ -57,10 +60,7 @@ class Pdm4arAgent(Agent):
         self.myplanner = ()
 
         # * SAIMON PARAMS
-        self.road = None
-        self.spline_ref = None
-        self.samplet = None
-        self.past_t = 0
+        self.last_replan_time = 0
         self.replan_t = 99
 
     def on_episode_init(self, init_obs: InitSimObservations):
@@ -70,6 +70,10 @@ class Pdm4arAgent(Agent):
         assert isinstance(init_obs.goal, RefLaneGoal)
         assert isinstance(init_obs.model_geometry, VehicleGeometry)
         assert isinstance(init_obs.model_params, VehicleParameters)
+        assert init_obs.dg_scenario
+        assert init_obs.dg_scenario.lanelet_network
+        logger.warning("Starting new scenario")
+
         self.goal = init_obs.goal
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
@@ -78,22 +82,67 @@ class Pdm4arAgent(Agent):
         self.visualizer = Visualizer(init_obs)
         self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
 
-        # * SAIMON TEST #######################################################
         reference_points, target_lanelet_id = obtain_complete_ref(init_obs)
-        self.road = get_lanelet_distances(init_obs.dg_scenario.lanelet_network, target_lanelet_id)
-        self.spline_ref = SplineReference()
-        x, y, _, _ = self.spline_ref.obtain_reference_traj(reference_points, resolution=1e5)
-        self.ref = np.column_stack((x, y))
-        self.ln = init_obs.dg_scenario.lanelet_network
+        self.road_distances = get_lanelet_distances(init_obs.dg_scenario.lanelet_network, target_lanelet_id)
+        self.spline_ref = SplineReference(reference_points, resolution=int(1e5))
 
-        # initialize planner from planner.py
-        # initial state, goal state, dynamics parameters
-        # https://github.com/idsc-frazzoli/dg-commons/blob/master/src/dg_commons/sim/models/vehicle.py#L197 <- for dynamics
         self.planner = Planner()
         self.controller = Controller(self.sp, self.sg)
 
         self.all_timesteps = []
         self.all_states = []
+
+    def create_sampler(self, current_state: VehicleState):
+        current_cart = np.column_stack((current_state.x, current_state.y))
+        current_frenet = self.spline_ref.to_frenet(current_cart)
+        road_l = self.road_distances[0]
+        road_r = self.road_distances[1]
+        road_generic = self.road_distances[2]
+        c_d = current_frenet[0][1]
+        s0 = current_frenet[0][0]
+        # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
+        self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
+
+    def trigger_replan(self, current_state: VehicleState, current_time: float):
+        fp = self.sampler.get_paths_merge()
+        logger.warning("Sampled {} paths".format(len(fp)))
+
+        # TODO perform feasibility, cost and collision check
+        # (iterate through all)
+
+        best_path_index, min_cost = self.check_paths(fp)
+        logger.warning("Picked up {}th path with cost {}".format(best_path_index, min_cost))
+        self.replan_t = fp[best_path_index].t[-1]
+        self.sampler.assign_next_init_conditions(best_path_index, self.replan_t)
+
+        cp = self.spline_ref.to_cartesian(fp[best_path_index])
+
+        timestamps = list(cp[1])
+        psi_vals = [
+            (
+                np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
+                if i < cp[0].shape[0] - 1 and i > 0
+                else current_state.psi
+            )
+            for i in range(cp[0].shape[0])
+        ]
+        states = [
+            VehicleState(
+                cp[0][i][0],
+                cp[0][i][1],
+                psi_vals[i],
+                cp[2][i],
+                (
+                    np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
+                    if i < cp[0].shape[0] - 1 and i > 0
+                    else current_state.delta
+                ),
+            )
+            for i in range(cp[0].shape[0])
+        ]
+        self.agent_traj = Trajectory(timestamps, states)
+        self.controller.set_reference(self.agent_traj)
+        self.last_replan_time = current_time
 
     def get_commands(self, sim_obs: SimObservations) -> VehicleCommands:
         """This method is called by the simulator every dt_commands seconds (0.1s by default).
@@ -106,59 +155,18 @@ class Pdm4arAgent(Agent):
         """
         my_state = sim_obs.players[self.name].state
         assert isinstance(my_state, VehicleState)
+        current_time = float(sim_obs.time)
 
         self.all_timesteps.append(sim_obs.time)
         self.all_states.append(my_state)
 
         my_traj = Trajectory(timestamps=self.all_timesteps, values=self.all_states)
 
-        if np.isclose(float(sim_obs.time), 0):
-            current_cart = np.column_stack((my_state.x, my_state.y))
-            current_frenet = self.spline_ref.to_frenet(current_cart)
-            road_l = self.road["distance_to_leftmost"]
-            road_r = self.road["distance_to_rightmost"]
-            road_generic = self.road["distance_to_other_lanelet"]
-            c_d = current_frenet[0][1]
-            s0 = current_frenet[0][0]
-            # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
-            self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, my_state.vx, c_d, 0, 0, s0)
+        if np.isclose(current_time, 0):
+            self.create_sampler(my_state)
 
-        if np.isclose(float(sim_obs.time), 0) or np.isclose(float(sim_obs.time - self.past_t), self.replan_t):
-            fp = self.sampler.get_paths_merge()
-            # TODO perform feasibility, cost and collision check
-            # (iterate through all)
-            best_path_index = self.check_paths(fp)
-            self.replan_t = fp[best_path_index].t[-1]
-            self.past_t = sim_obs.time
-            self.sampler.assign_next_init_conditions(best_path_index, self.replan_t)
-
-            cp = self.spline_ref.to_cartesian(fp[best_path_index])
-
-            timestamps = list(cp[1])
-            psi_vals = [
-                (
-                    np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
-                    if i < cp[0].shape[0] - 1 and i > 0
-                    else my_state.psi
-                )
-                for i in range(cp[0].shape[0])
-            ]
-            states = [
-                VehicleState(
-                    cp[0][i][0],
-                    cp[0][i][1],
-                    psi_vals[i],
-                    cp[2][i],
-                    (
-                        np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
-                        if i < cp[0].shape[0] - 1 and i > 0
-                        else my_state.delta
-                    ),
-                )
-                for i in range(cp[0].shape[0])
-            ]
-            self.agent_traj = Trajectory(timestamps, states)
-            self.controller.set_reference(self.agent_traj)
+        if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
+            self.trigger_replan(my_state, current_time)
 
             # self.visualizer.plot_scenario(sim_obs)
             # trajectories = []
@@ -181,7 +189,7 @@ class Pdm4arAgent(Agent):
             #     ]
             #     trajectories.append(Trajectory(timestamps, states))
             # self.visualizer.plot_trajectories(trajectories, colors=None)
-            # self.visualizer.save_fig("../../out/12/samples" + str(round(float(sim_obs.time), 2)) + ".png")
+            # self.visualizer.save_fig("../../out/12/samples" + str(round(current_time, 2)) + ".png")
             # self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)
@@ -193,12 +201,12 @@ class Pdm4arAgent(Agent):
 
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
-        self.controller.plot_controller_perf(self.past_t)
+        self.controller.plot_controller_perf(self.last_replan_time)
         self.controller.clear_viz()
 
         return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)
 
-    def check_paths(self, fplist) -> int:
+    def check_paths(self, fplist) -> tuple[int, float]:
 
         MAX_SPEED = 25  # maximum speed [m/s]
         MIN_SPEED = 5
@@ -229,7 +237,7 @@ class Pdm4arAgent(Agent):
                 mincost = fplist[i].cf
                 bestpath = i
 
-        return bestpath
+        return bestpath, mincost
 
 
 # def plot_lanelets_and_path(lanelet_network: LaneletNetwork, path: np.ndarray, reference_trajectory: np.ndarray) -> None:

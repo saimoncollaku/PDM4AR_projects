@@ -73,7 +73,7 @@ def obtain_complete_ref(init_obs: InitSimObservations) -> tuple[np.ndarray, int]
     return complete_path, first_lanelet_id
 
 
-def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> dict:
+def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> tuple[float, float, float]:
     """
     Calculate distances between the target lanelet and its leftmost, rightmost, and a specified lanelet.
 
@@ -134,10 +134,4 @@ def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> di
     other_start_point = other_lanelet.center_vertices[0]
     distance_to_other_lanelet = compute_distance(target_start_point, other_start_point)
 
-    distances = {
-        "distance_to_leftmost": distance_to_leftmost,
-        "distance_to_rightmost": distance_to_rightmost,
-        "distance_to_other_lanelet": distance_to_other_lanelet,
-    }
-
-    return distances
+    return distance_to_leftmost, distance_to_rightmost, distance_to_other_lanelet
