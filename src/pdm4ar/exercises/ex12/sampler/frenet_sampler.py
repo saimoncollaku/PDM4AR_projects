@@ -28,7 +28,7 @@ class Sample:
     t: np.ndarray
     kinematics_feasible: bool = False
     collision_free: bool = False
-    cost: float
+    cost: dict
 
     def __init__(self):
         # Lateral

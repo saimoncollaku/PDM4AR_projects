@@ -3,9 +3,9 @@
 # Collision & trajectory check
 # Score candidate trajectories - cost functions, kinematic check & collision check > Behaviour, Velocity, Occlusion Planner
 
+from shapely.geometry import Polygon
 from matplotlib import pyplot as plt
 import numpy as np
-from scipy import constants
 from scipy.integrate import simpson
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
@@ -78,17 +78,12 @@ class CollisionFilter:
     def __init__(self, init_obs):
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
-        # can only assume all cars have same geometry
-        self.dist = 2 * max(
-            np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf / 2) ** 2),
-            np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr / 2) ** 2),
-        )
 
     def check(self, trajectory: Sample, sim_obs):
         self.__trajectory = trajectory
         collides = False
         self.fig, self.axes = plt.subplots()
-        self.axes.scatter(self.__trajectory.x, self.__trajectory.y, c="b")
+        # self.axes.scatter(self.__trajectory.x, self.__trajectory.y, c="b")
         self.axes.autoscale()
         for player in sim_obs.players:
             if player != self.name:
@@ -99,15 +94,58 @@ class CollisionFilter:
         plt.close(self.fig)
         return collides
 
+    def get_box(self, x, y, psi):
+        # can only assume all cars have same geometry
+        cos_psi, sin_psi = np.cos(psi), np.sin(psi)
+        box_corners = [
+            [
+                x - self.sg.lr * cos_psi + self.sg.w_half * sin_psi,
+                y - self.sg.lr * sin_psi - self.sg.w_half * cos_psi,
+            ],
+            [
+                x - self.sg.lr * cos_psi - self.sg.w_half * sin_psi,
+                y - self.sg.lr * sin_psi + self.sg.w_half * cos_psi,
+            ],
+            [
+                x + self.sg.lf * cos_psi - self.sg.w_half * sin_psi,
+                y + self.sg.lf * sin_psi + self.sg.w_half * cos_psi,
+            ],
+            [
+                x + self.sg.lf * cos_psi + self.sg.w_half * sin_psi,
+                y + self.sg.lf * sin_psi - self.sg.w_half * cos_psi,
+            ],
+        ]
+        return Polygon(box_corners)
+
     def collision_filter(self, obs_state):
         for i in range(self.__trajectory.T):
             pt_x, pt_y = self.__trajectory.x[i], self.__trajectory.y[i]
+            self_box = self.get_box(
+                pt_x,
+                pt_y,
+                (
+                    np.arctan2(self.__trajectory.y[i + 1] - pt_y, self.__trajectory.x[i + 1] - pt_x)
+                    if i < self.__trajectory.T - 1
+                    else 0
+                ),
+            )
+
             obs_x = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
             obs_y = obs_state.y + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
-            self.axes.scatter(obs_x, obs_y)
-            dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
-            if dist <= self.dist:
+            obs_box = self.get_box(obs_x, obs_y, obs_state.psi)
+
+            # dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
+            if self_box.intersects(obs_box):
                 return True
+
+            sbx, sby = self_box.exterior.xy
+            self.axes.plot(sbx, sby, color="firebrick", alpha=0.4)
+            self.axes.fill(sbx, sby, color="firebrick", alpha=0.2)
+
+            obx, oby = obs_box.exterior.xy
+            self.axes.plot(sbx, sby, color="royalblue", alpha=0.4)
+            self.axes.fill(obx, oby, color="royalblue", alpha=0.2)
+
         return False
 
 
@@ -116,7 +154,7 @@ class Cost:
     sg: VehicleGeometry
     __trajectory: Sample
     __observations: SimObservations
-    v_ref: float
+    v_ref: float = 20.0
     weights: dict
     cost_functions: list
 
@@ -124,21 +162,21 @@ class Cost:
         self.name = init_obs.my_name
         ref_line_vec = (ref_line[-1] - ref_line[0]) / np.linalg.norm(ref_line[-1] - ref_line[0], 2)
         self.__reference = (ref_line[0], ref_line_vec)
-        self.cost_functions = [
-            self.penalize_acceleration,
-            self.penalize_closeness_from_obstacles,
-            self.penalize_deviation_from_reference,
-            self.penalize_jerk,
-            # self.penalize_velocity_offset,
-        ]
-        self.weights = {cost_fn: 1 for cost_fn in self.cost_functions}
+        self.weights = {
+            self.penalize_acceleration: 1.0,  # 1e1 order
+            self.penalize_closeness_from_obstacles: 1.0,  # 1e-1 order
+            self.penalize_deviation_from_reference: 1.0,  # 1e1 order
+            self.penalize_jerk: 1.0,  # 1e2 order
+            self.penalize_velocity: 0.0,  # 1e3 order
+        }
+        self.cost_functions = list(self.weights.keys())
 
     def get(self, trajectory: Sample, sim_obs: SimObservations):
         self.__observations = sim_obs
         self.__trajectory = trajectory
-        cost = 0
+        cost = {}
         for cost_fn, weight in self.weights.items():
-            cost += weight * cost_fn()
+            cost[cost_fn.__name__] = weight * cost_fn()
         return cost
 
     @property
@@ -163,14 +201,14 @@ class Cost:
         y = np.square(pure_jerk)
         return simpson(y, dx=self.__trajectory.dt)
 
-    def penalize_velocity_offset(self):
+    def penalize_velocity(self):
         assert self.v_ref is not None
         pure_velocity = scalar_value(self.__trajectory.xdot, self.__trajectory.ydot)
         # penalize over second half of path
         from_idx = int(self.__trajectory.T / 2)
-        cost = np.sum(np.abs(pure_velocity[from_idx:-1] - self.v_ref))
-        cost += np.square(pure_velocity[-1] - self.v_ref)
-        return constants
+        cost = (self.__trajectory.T - from_idx) * self.v_ref**2 - np.sum(np.square(pure_velocity[from_idx:]))
+        # cost += np.square(pure_velocity[-1] - self.v_ref)
+        return cost
 
     def penalize_deviation_from_reference(self):
         ref_pt, ref_vec = self.__reference
@@ -192,9 +230,6 @@ class Cost:
                 obs_pos[:, 0] = obs_state.x + obs_state.vx * np.cos(obs_state.psi) * ts
                 obs_pos[:, 1] = obs_state.y + obs_state.vx * np.sin(obs_state.psi) * ts
 
-                # obs_init = np.array([obs_state.x, obs_state.y])
-                # obs_vel = np.array([obs_state.vx * np.cos(obs_state.psi), obs_state.vx * np.sin(obs_state.psi)])
-                # obs_pos = obs_init + obs_shift
                 dist = np.linalg.norm(obs_pos - player_pos, ord=2, axis=1)
                 cost += simpson(1 / (dist**2), dx=self.__trajectory.dt)
         return cost
@@ -217,9 +252,10 @@ class Evaluator:
     def get_best_path(self, all_samples: list[Sample], sim_obs: SimObservations):
         costs = -np.ones(len(all_samples))
         for i, sample in enumerate(all_samples):
-            costs[i] = self.get_cost(sample, sim_obs)
+            costs[i] = sum(self.get_costs(sample, sim_obs).values())
         path_sort_idx = np.argsort(costs)
         for path_idx in path_sort_idx:
+            print(self.get_costs(all_samples[path_idx], sim_obs))
             collides = self.collision_filter.check(all_samples[path_idx], sim_obs)
             if not collides:
                 best_path_index = path_idx
@@ -228,7 +264,7 @@ class Evaluator:
         all_samples[best_path_index].collision_free = True
         return best_path_index, costs
 
-    def get_cost(self, trajectory: Sample, sim_obs: SimObservations) -> float:
+    def get_costs(self, trajectory: Sample, sim_obs: SimObservations) -> dict:
         # cartesian_points = self.spline_ref.get_xy(trajectory)
         # trajectory.x = cartesian_points[:, 0]
         # trajectory.y = cartesian_points[:, 1]
@@ -254,7 +290,7 @@ class Evaluator:
 
         kinematics_passed = self.kinematics_filter.check(trajectory)
         if not kinematics_passed:
-            return np.inf
+            return {"kinematics_cost": np.inf}
         trajectory.kinematics_feasible = True
         # collides = self.collision_filter.check(trajectory, sim_obs)
         # if collides:
