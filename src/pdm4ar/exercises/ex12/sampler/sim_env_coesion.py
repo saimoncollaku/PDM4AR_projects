@@ -136,6 +136,12 @@ def get_lanelet_distances(lanelet_network: LaneletNetwork, target_id: int) -> tu
     else:
         other_lanelet = lanelet_network.find_lanelet_by_id(target_lanelet.adj_right)
     other_start_point = other_lanelet.center_vertices[0]
+
+    # fix
+    center1 = target_lanelet.center_vertices
+    center2 = other_lanelet.center_vertices
+    distances = np.linalg.norm(center1[:, np.newaxis, :] - center2[np.newaxis, :, :], axis=2)
     distance_to_other_lanelet = compute_distance(target_start_point, other_start_point)
+    distance_to_other_lanelet = np.min(distances)
 
     return distance_to_leftmost, distance_to_rightmost, distance_to_other_lanelet
