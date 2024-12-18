@@ -111,10 +111,18 @@ class Pdm4arAgent(Agent):
         # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 
+    def reinitialize_sampler(self, current_state: VehicleState):
+        current_cart = np.column_stack((current_state.x, current_state.y))
+        current_frenet = self.spline_ref.to_frenet(current_cart)
+        c_d = current_frenet[0][1]
+        s0 = current_frenet[0][0]
+        self.sampler.assign_init_pos(s0, c_d, current_state.vx)
+
     def trigger_replan(self, sim_obs: SimObservations):
         current_state = sim_obs.players[self.name].state
         current_time = float(sim_obs.time)
         assert isinstance(current_state, VehicleState)
+        self.reinitialize_sampler(current_state)
 
         all_samples = self.sampler.get_paths_merge()
         logger.warning("Sampled {} paths".format(len(all_samples)))
@@ -132,7 +140,6 @@ class Pdm4arAgent(Agent):
         )
 
         self.replan_t = best_path.t[-1]
-        self.sampler.assign_next_init_conditions(best_path_index, self.replan_t)
 
         cp = self.spline_ref.to_cartesian(all_samples[best_path_index])
 
