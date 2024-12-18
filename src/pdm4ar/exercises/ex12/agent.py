@@ -128,13 +128,12 @@ class Pdm4arAgent(Agent):
         logger.warning("Sampled {} paths".format(len(all_samples)))
 
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
-        list_costs = sorted(costs.tolist())
         min_cost = costs[best_path_index]
         best_path = all_samples[best_path_index]
         # best_path_index, min_cost = self.check_paths(all_samples)
-        logger.warning("Least 3 costs: {}".format(list_costs[0:3]))
+        logger.warning("Least 3 costs: {}".format(list(np.sort(costs)[0:3].round(2))))
         logger.warning(
-            "Path {}: cost {}, kinematics_feasible: {}, collision_free: {}".format(
+            "Path {}: cost {:.3f}, kinematics_feasible: {}, collision_free: {}".format(
                 best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free
             )
         )
@@ -231,7 +230,7 @@ class Pdm4arAgent(Agent):
 
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
-        self.controller.plot_controller_perf(self.last_replan_time)
+        self.controller.plot_controller_perf(len(self.plans))
         self.controller.clear_viz()
 
         return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)

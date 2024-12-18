@@ -26,8 +26,8 @@ class Sample:
     kappadot: np.ndarray
 
     t: np.ndarray
-    kinematics_feasible: bool
-    collision_free: bool
+    kinematics_feasible: bool = False
+    collision_free: bool = False
     cost: float
 
     def __init__(self):

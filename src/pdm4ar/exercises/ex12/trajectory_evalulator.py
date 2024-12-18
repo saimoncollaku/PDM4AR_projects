@@ -3,8 +3,7 @@
 # Collision & trajectory check
 # Score candidate trajectories - cost functions, kinematic check & collision check > Behaviour, Velocity, Occlusion Planner
 
-from mimetypes import init
-from multiprocessing import connection
+from matplotlib import pyplot as plt
 import numpy as np
 from scipy import constants
 from scipy.integrate import simpson
@@ -80,30 +79,32 @@ class CollisionFilter:
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
         # can only assume all cars have same geometry
-        self.dist = (
-            2
-            * max(
-                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf / 2) ** 2),
-                np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr / 2) ** 2),
-            )
-            + 0.1
+        self.dist = 2 * max(
+            np.sqrt((self.sg.w_half) ** 2 + (self.sg.lf / 2) ** 2),
+            np.sqrt((self.sg.w_half) ** 2 + (self.sg.lr / 2) ** 2),
         )
 
     def check(self, trajectory: Sample, sim_obs):
         self.__trajectory = trajectory
         collides = False
+        self.fig, self.axes = plt.subplots()
+        self.axes.scatter(self.__trajectory.x, self.__trajectory.y, c="b")
+        self.axes.autoscale()
         for player in sim_obs.players:
             if player != self.name:
                 collides = self.collision_filter(sim_obs.players[player].state)
                 if collides:
                     break
+        self.fig.savefig("../../out/12/collision_check.png")
+        plt.close(self.fig)
         return collides
 
     def collision_filter(self, obs_state):
         for i in range(self.__trajectory.T):
             pt_x, pt_y = self.__trajectory.x[i], self.__trajectory.y[i]
             obs_x = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
-            obs_y = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+            obs_y = obs_state.y + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+            self.axes.scatter(obs_x, obs_y)
             dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
             if dist <= self.dist:
                 return True
@@ -217,7 +218,14 @@ class Evaluator:
         costs = -np.ones(len(all_samples))
         for i, sample in enumerate(all_samples):
             costs[i] = self.get_cost(sample, sim_obs)
-        best_path_index = int(np.argmin(costs))
+        path_sort_idx = np.argsort(costs)
+        for path_idx in path_sort_idx:
+            collides = self.collision_filter.check(all_samples[path_idx], sim_obs)
+            if not collides:
+                best_path_index = path_idx
+                break
+        print(best_path_index, costs[best_path_index])
+        all_samples[best_path_index].collision_free = True
         return best_path_index, costs
 
     def get_cost(self, trajectory: Sample, sim_obs: SimObservations) -> float:
@@ -248,10 +256,10 @@ class Evaluator:
         if not kinematics_passed:
             return np.inf
         trajectory.kinematics_feasible = True
-        collides = self.collision_filter.check(trajectory, sim_obs)
-        if collides:
-            return np.inf
-        trajectory.collision_free = True
+        # collides = self.collision_filter.check(trajectory, sim_obs)
+        # if collides:
+        #     return np.inf
+        # trajectory.collision_free = True
 
         cost = self.trajectory_cost.get(trajectory, sim_obs)
         trajectory.cost = cost
