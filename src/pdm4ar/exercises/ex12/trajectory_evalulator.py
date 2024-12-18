@@ -160,14 +160,13 @@ class Cost:
 
     def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray) -> None:
         self.name = init_obs.my_name
-        ref_line_vec = (ref_line[-1] - ref_line[0]) / np.linalg.norm(ref_line[-1] - ref_line[0], 2)
-        self.__reference = (ref_line[0], ref_line_vec)
+        self.__reference = ref_line[::100]
         self.weights = {
             self.penalize_acceleration: 1.0,  # 1e1 order
             self.penalize_closeness_from_obstacles: 1.0,  # 1e-1 order
             self.penalize_deviation_from_reference: 1.0,  # 1e1 order
-            self.penalize_jerk: 1.0,  # 1e2 order
-            self.penalize_velocity: 0.0,  # 1e3 order
+            self.penalize_jerk: 0.1,  # 1e2 order
+            self.penalize_velocity: 0.005,  # 1e3 order
         }
         self.cost_functions = list(self.weights.keys())
 
@@ -191,6 +190,9 @@ class Cost:
     def trajectory(self):
         return self.__trajectory
 
+    # def set_vis(self, fig, axes):
+    #     self.fig, self.axes = fig, axes
+
     def penalize_acceleration(self):
         pure_acceleration = scalar_value(self.__trajectory.xdotdot, self.__trajectory.ydotdot)
         y = np.square(pure_acceleration)
@@ -211,9 +213,8 @@ class Cost:
         return cost
 
     def penalize_deviation_from_reference(self):
-        ref_pt, ref_vec = self.__reference
         pts = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
-        dist = np.cross(ref_vec, pts - ref_pt)
+        dist = [np.min(np.linalg.norm(self.__reference - pt, ord=2, axis=1)) for pt in pts]
         return simpson(np.square(dist), dx=self.__trajectory.dt)
 
     def penalize_closeness_from_obstacles(self):
@@ -249,6 +250,10 @@ class Evaluator:
         self.trajectory_cost = Cost(init_obs, ref_line)
         self.spline_ref = spline_ref
 
+        # self.fig, self.axes = plt.subplots()
+        # self.axes.autoscale()
+        # self.trajectory_cost.set_vis(self.fig, self.axes)
+
     def get_best_path(self, all_samples: list[Sample], sim_obs: SimObservations):
         costs = -np.ones(len(all_samples))
         for i, sample in enumerate(all_samples):
@@ -262,6 +267,12 @@ class Evaluator:
                 break
         print(best_path_index, costs[best_path_index])
         all_samples[best_path_index].collision_free = True
+
+        # self.fig.savefig("../../out/12/traj_cost.png")
+        # plt.close(self.fig)
+        # self.fig, self.axes = plt.subplots()
+        # self.trajectory_cost.set_vis(self.fig, self.axes)
+
         return best_path_index, costs
 
     def get_costs(self, trajectory: Sample, sim_obs: SimObservations) -> dict:

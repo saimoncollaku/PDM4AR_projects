@@ -166,6 +166,7 @@ class Pdm4arAgent(Agent):
             for i in range(cp[0].shape[0])
         ]
         states[0] = current_state
+        states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix  for delta bump
         self.agent_traj = Trajectory(timestamps, states)
         self.plans.append(self.agent_traj)
         self.controller.set_reference(self.agent_traj)
