@@ -24,6 +24,9 @@ class Sample:
     ydotdotdot: np.ndarray
     kappa: np.ndarray
     kappadot: np.ndarray
+    vx: np.ndarray
+    psi: np.ndarray
+    delta: np.ndarray
 
     t: np.ndarray
     kinematics_feasible: bool = False
@@ -45,7 +48,11 @@ class Sample:
 
         self.x = None
         self.y = None
+        self.vx = None
+        self.psi = None
+        self.delta = None
         self.kappa = None
+
         self.kinematics_feasible = False
         self.collision_free = False
         self.cost = np.inf
@@ -53,6 +60,45 @@ class Sample:
         self.cd = 0.0
         self.cv = 0.0
         self.cf = 0.0
+
+    def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
+        cart_grad: np.ndarray = np.gradient(cartesian_points, axis=0)
+        cartesian_vel = np.zeros((len(time_grad), 2))
+        cartesian_vel[:, 0] = cart_grad[:, 0] / time_grad
+        cartesian_vel[:, 1] = cart_grad[:, 1] / time_grad
+        return cartesian_vel
+
+    def get_xy_dotdot(self, cartesian_vel: np.ndarray, time_grad: np.ndarray):
+        return self.get_xy_dot(cartesian_vel, time_grad)
+
+    def get_xy_dotdotdot(self, cartesian_acc: np.ndarray, time_grad: np.ndarray):
+        return self.get_xy_dot(cartesian_acc, time_grad)
+
+    def get_kappadot(self, time_grad: np.ndarray):
+        kappa_grad: np.ndarray = np.gradient(self.kappa)
+        return kappa_grad / time_grad
+
+    def compute_steering(
+        self,
+        wheelbase,
+    ):
+        if not isinstance(self.delta, np.ndarray):
+            dpsi = np.gradient(self.psi)
+            self.delta = np.arctan2(dpsi / self.dt, self.vx / wheelbase)
+
+    def compute_derivatives(self):
+        time_grad = np.gradient(np.array(self.t))
+        cartesian_points = np.stack([self.x, self.y], axis=1)
+        cartesian_vel = self.get_xy_dot(cartesian_points, time_grad)
+        cartesian_acc = self.get_xy_dotdot(cartesian_vel, time_grad)
+        cartesian_jerk = self.get_xy_dotdotdot(cartesian_acc, time_grad)
+        self.xdot = cartesian_vel[:, 0]
+        self.xdotdot = cartesian_acc[:, 0]
+        self.xdotdotdot = cartesian_jerk[:, 0]
+        self.ydot = cartesian_vel[:, 1]
+        self.ydotdot = cartesian_acc[:, 1]
+        self.ydotdotdot = cartesian_jerk[:, 1]
+        self.kappadot = self.get_kappadot(time_grad)
 
 
 class FrenetSampler:

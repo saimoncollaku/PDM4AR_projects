@@ -175,6 +175,11 @@ class BasicController:
             [target_states[self.curr_idx][1], self.curr_states[-1][1]],
             marker="x",
         )
+        # if len(self.curr_states) > 2:
+        #     print(
+        #         max(np.gradient([state[1] for state in target_states])),
+        #         max(np.gradient([state[1] for state in self.curr_states])),
+        #     )
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
         self.axes[0].autoscale()
         self.axes[1].autoscale()

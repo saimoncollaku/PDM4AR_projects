@@ -33,6 +33,8 @@ class KinematicsFilter:
         self.sp = sp
         self.sg = sg
         self.kappa_allowed = np.tan(self.sp.delta_max) / self.sg.wheelbase
+        self.min_vel = 4.0
+        self.max_vel = 25.0
         # raise NotImplementedError()
 
     @property
@@ -41,7 +43,14 @@ class KinematicsFilter:
 
     def check(self, trajectory: Sample):
         self.__trajectory = trajectory
-        return self.acceleration_filter() and self.curvature_filter() and self.yaw_filter()
+        return (
+            self.acceleration_filter()
+            and self.curvature_filter()
+            and self.yaw_filter()
+            and self.delta_filter()
+            and self.velocity_filter()
+            and self.goal_filter()
+        )
 
     def acceleration_filter(self):
         """
@@ -69,6 +78,30 @@ class KinematicsFilter:
         """
         Basically kappa within limits
         """
+        return True
+
+    def delta_filter(self):
+        self.__trajectory.compute_steering(self.sg.wheelbase)
+        ddelta = np.gradient(self.__trajectory.delta)
+        if np.max(np.abs(ddelta)) > 2 * self.sp.ddelta_max * self.__trajectory.dt:
+            return False
+        return True
+
+    def velocity_filter(self):
+        pure_velocity = scalar_value(self.__trajectory.xdot, self.__trajectory.ydot)
+        max_velocity = np.max(pure_velocity)
+        min_velocity = np.min(pure_velocity)
+        if min_velocity < self.min_vel or max_velocity > self.max_vel:
+            return False
+        return True
+
+    def goal_filter(self):
+        d_start = self.__trajectory.d[0]
+        d_end = self.__trajectory.d[-1]
+        # print(d_start, d_end)
+        if np.isclose(d_start, 0, atol=0.1) and not np.isclose(d_end, d_start, atol=0.5, rtol=0):
+            # do not deviate from the reference once you reach it
+            return False
         return True
 
 
@@ -119,16 +152,8 @@ class CollisionFilter:
 
     def collision_filter(self, obs_state):
         for i in range(self.__trajectory.T):
-            pt_x, pt_y = self.__trajectory.x[i], self.__trajectory.y[i]
-            self_box = self.get_box(
-                pt_x,
-                pt_y,
-                (
-                    np.arctan2(self.__trajectory.y[i + 1] - pt_y, self.__trajectory.x[i + 1] - pt_x)
-                    if i < self.__trajectory.T - 1
-                    else 0
-                ),
-            )
+            pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
+            self_box = self.get_box(pt_x, pt_y, pt_psi)
 
             obs_x = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
             obs_y = obs_state.y + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
@@ -162,11 +187,11 @@ class Cost:
         self.name = init_obs.my_name
         self.__reference = ref_line[::100]
         self.weights = {
-            self.penalize_acceleration: 1.0,  # 1e1 order
-            self.penalize_closeness_from_obstacles: 1.0,  # 1e-1 order
+            self.penalize_acceleration: 0.1,  # 1e1 order
+            self.penalize_closeness_from_obstacles: 10.0,  # 1e-1 order
             self.penalize_deviation_from_reference: 1.0,  # 1e1 order
             self.penalize_jerk: 0.1,  # 1e2 order
-            self.penalize_velocity: 0.005,  # 1e3 order
+            self.penalize_velocity: 0.05,  # 1e2 order
         }
         self.cost_functions = list(self.weights.keys())
 
@@ -208,7 +233,7 @@ class Cost:
         pure_velocity = scalar_value(self.__trajectory.xdot, self.__trajectory.ydot)
         # penalize over second half of path
         from_idx = int(self.__trajectory.T / 2)
-        cost = (self.__trajectory.T - from_idx) * self.v_ref**2 - np.sum(np.square(pure_velocity[from_idx:]))
+        cost = self.v_ref**2 - (np.sum(np.square(pure_velocity[from_idx:])) / (self.__trajectory.T - from_idx))
         # cost += np.square(pure_velocity[-1] - self.v_ref)
         return cost
 
@@ -257,7 +282,10 @@ class Evaluator:
     def get_best_path(self, all_samples: list[Sample], sim_obs: SimObservations):
         costs = -np.ones(len(all_samples))
         for i, sample in enumerate(all_samples):
-            costs[i] = sum(self.get_costs(sample, sim_obs).values())
+            costs_dict = self.get_costs(sample, sim_obs)
+            # if "penalize_velocity" in costs_dict:
+            #     print(costs_dict)
+            costs[i] = sum(costs_dict.values())
         path_sort_idx = np.argsort(costs)
         for path_idx in path_sort_idx:
             print(self.get_costs(all_samples[path_idx], sim_obs))
@@ -279,25 +307,10 @@ class Evaluator:
         # cartesian_points = self.spline_ref.get_xy(trajectory)
         # trajectory.x = cartesian_points[:, 0]
         # trajectory.y = cartesian_points[:, 1]
-        time_array = np.array(trajectory.t)
-        time_grad = np.gradient(time_array)
+
         if not isinstance(trajectory.x, np.ndarray):
-            cartesian_points, _, _, _, kappa = self.spline_ref.to_cartesian(trajectory)
-            trajectory.x = cartesian_points[:, 0]
-            trajectory.y = cartesian_points[:, 1]
-            trajectory.kappa = kappa
-        else:
-            cartesian_points = np.stack([trajectory.x, trajectory.y], axis=1)
-        cartesian_vel = self.spline_ref.get_xy_dot(cartesian_points, time_grad)
-        cartesian_acc = self.spline_ref.get_xy_dotdot(cartesian_vel, time_grad)
-        cartesian_jerk = self.spline_ref.get_xy_dotdotdot(cartesian_acc, time_grad)
-        trajectory.xdot = cartesian_vel[:, 0]
-        trajectory.xdotdot = cartesian_acc[:, 0]
-        trajectory.xdotdotdot = cartesian_jerk[:, 0]
-        trajectory.ydot = cartesian_vel[:, 1]
-        trajectory.ydotdot = cartesian_acc[:, 1]
-        trajectory.ydotdotdot = cartesian_jerk[:, 1]
-        trajectory.kappadot = self.spline_ref.get_kappadot(trajectory.kappa, time_grad)
+            self.spline_ref.to_cartesian(trajectory)
+        trajectory.compute_derivatives()
 
         kinematics_passed = self.kinematics_filter.check(trajectory)
         if not kinematics_passed:

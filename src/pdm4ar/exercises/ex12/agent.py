@@ -139,33 +139,17 @@ class Pdm4arAgent(Agent):
         )
 
         self.replan_t = best_path.t[-1]
+        best_path.compute_steering(self.sg.wheelbase)
+        ddelta = np.gradient(best_path.delta)
+        print("Best path ddelta: ", np.max(np.abs(ddelta)))
 
-        cp = self.spline_ref.to_cartesian(all_samples[best_path_index])
-
-        timestamps = list(cp[1] + current_time)
-        psi_vals = [
-            (
-                np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
-                if i < cp[0].shape[0] - 1 and i > 0
-                else 0
-            )
-            for i in range(cp[0].shape[0])
-        ]
+        timestamps = list(best_path.t + current_time)
         states = [
-            VehicleState(
-                cp[0][i][0],
-                cp[0][i][1],
-                psi_vals[i],
-                cp[2][i],
-                (
-                    np.arctan2((psi_vals[i + 1] - psi_vals[i]) / 0.1, cp[2][i] / self.sg.wheelbase)
-                    if i < cp[0].shape[0] - 1 and i > 0
-                    else 0
-                ),
-            )
-            for i in range(cp[0].shape[0])
+            VehicleState(best_path.x[i], best_path.y[i], best_path.psi[i], best_path.vx[i], best_path.delta[i])
+            for i in range(best_path.T)
         ]
         states[0] = current_state
+        states[-1].psi = self.initial_psi  # assume heading aligned to lane at the end of trajectory
         states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix  for delta bump
         self.agent_traj = Trajectory(timestamps, states)
         self.plans.append(self.agent_traj)
@@ -194,32 +178,23 @@ class Pdm4arAgent(Agent):
 
         if np.isclose(current_time, 0):
             self.create_sampler(my_state)
+            self.initial_psi = my_state.psi
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
             all_samples = self.trigger_replan(sim_obs)
 
             self.visualizer.plot_scenario(sim_obs)
             trajectories = []
-            for sample in np.random.choice(len(all_samples), 50):
-                cp = self.spline_ref.to_cartesian(self.sampler.last_samples[sample])
-                timestamps = list(cp[1])
+            for s_idx in np.random.choice([idx for idx, sample in enumerate(all_samples) if sample.cost != np.inf], 50):
+                path = all_samples[s_idx]
+                path.compute_steering(self.sg.wheelbase)
+                timestamps = list(path.t + current_time)
                 states = [
-                    VehicleState(
-                        cp[0][i][0],
-                        cp[0][i][1],
-                        (
-                            np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
-                            if i < cp[0].shape[0] - 1
-                            else my_state.psi
-                        ),
-                        cp[2][i],
-                        0,
-                    )
-                    for i in range(cp[0].shape[0])
+                    VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)
                 ]
                 trajectories.append(Trajectory(timestamps, states))
             self.visualizer.plot_trajectories(trajectories, colors=None)
-            self.visualizer.save_fig("../../out/12/samples" + str(round(current_time, 2)) + ".png")
+            self.visualizer.save_fig("../../out/12/samples_feas" + str(len(self.plans)) + ".png")
             self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)

@@ -1,6 +1,5 @@
 from typing import Tuple
 import numpy as np
-import scipy.interpolate as interpolate
 from scipy.interpolate import splprep, splev
 
 from pdm4ar.exercises.ex12.sampler.frenet_sampler import Sample
@@ -98,38 +97,13 @@ class SplineReference:
             cartesian_points[i, :] = cartesian_point
         return cartesian_points
 
-    def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
-        cart_grad: np.ndarray = np.gradient(cartesian_points, axis=0)
-        cartesian_vel = np.zeros((len(time_grad), 2))
-        cartesian_vel[:, 0] = cart_grad[:, 0] / time_grad
-        cartesian_vel[:, 1] = cart_grad[:, 1] / time_grad
-        return cartesian_vel
-
-    def get_xy_dotdot(self, cartesian_vel: np.ndarray, time_grad: np.ndarray):
-        return self.get_xy_dot(cartesian_vel, time_grad)
-
-    def get_xy_dotdotdot(self, cartesian_acc: np.ndarray, time_grad: np.ndarray):
-        return self.get_xy_dot(cartesian_acc, time_grad)
-
-    def get_kappadot(self, kappa: np.ndarray, time_grad: np.ndarray):
-        kappa_grad: np.ndarray = np.gradient(kappa)
-        return kappa_grad / time_grad
-
-    def to_cartesian(self, sample: Sample) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def to_cartesian(self, sample: Sample):
         """
         Convert Frenet coordinates (s, d) back to Cartesian coordinates (x, y),
         and compute longitudinal velocity (v_x), orientation (theta), and curvature (kappa).
 
         Args:
             sample (Sample): A single Sample object containing Frenet trajectory.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-            - Cartesian points [[x1, y1], [x2, y2], ...]
-            - Corresponding timestamps
-            - Longitudinal velocities (v_x) for each time step
-            - Orientations (theta) for each time step
-            - Curvatures (kappa) for each time step
         """
         vx_values = np.zeros(len(sample.t))
         theta_values = np.zeros(len(sample.t))
@@ -164,15 +138,10 @@ class SplineReference:
         cart_dy = np.gradient(cartesian_points[:, 1])
 
         # Compute orientation (theta) for each point
-        theta_values = np.arctan2(cart_dy, cart_dx)
         sample.x = cartesian_points[:, 0]
         sample.y = cartesian_points[:, 1]
+        sample.psi = np.arctan2(cart_dy, cart_dx)
+        sample.vx = vx_values
         sample.kappa = kappa_values
 
-        return (
-            cartesian_points,
-            sample.t,
-            vx_values,
-            theta_values,
-            kappa_values,
-        )
+        return
