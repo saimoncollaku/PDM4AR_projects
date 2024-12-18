@@ -15,7 +15,7 @@ from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
 from dg_commons.planning import Trajectory, commands_plan_from_trajectory
 from dg_commons.seq.sequence import DgSampledSequence
-
+from dg_commons.sim.models.vehicle_ligths import LightsCmd, NO_LIGHTS, LIGHTS_TURN_LEFT, LIGHTS_TURN_RIGHT
 
 from pdm4ar.exercises.ex12.visualization import Visualizer
 from pdm4ar.exercises.ex12.planner import Planner
@@ -83,22 +83,25 @@ class Pdm4arAgent(Agent):
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
 
-        # self.lanelet_network = init_obs.dg_scenario.lanelet_network
-        self.visualizer = Visualizer(init_obs)
-        self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
-
         reference_points, target_lanelet_id = obtain_complete_ref(init_obs)
         self.road_distances = get_lanelet_distances(init_obs.dg_scenario.lanelet_network, target_lanelet_id)
         self.spline_ref = SplineReference(reference_points, resolution=int(1e5))
+        self.reference = np.column_stack((self.spline_ref.x, self.spline_ref.y))[::100]
+
+        self.visualize = False
 
         self.planner = Planner()
-        self.controller = Controller(self.sp, self.sg)
+        self.controller = Controller(self.sp, self.sg, self.visualize)
 
-        self.evaluator = Evaluator(init_obs, self.spline_ref, self.sp, self.sg)
+        self.evaluator = Evaluator(init_obs, self.spline_ref, self.sp, self.sg, self.visualize)
 
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
+
+        # if self.visualize:
+        self.visualizer = Visualizer(init_obs)
+        self.visualizer.set_goal(init_obs.my_name, init_obs.goal, self.sg)
 
     def create_sampler(self, current_state: VehicleState):
         current_cart = np.column_stack((current_state.x, current_state.y))
@@ -141,7 +144,7 @@ class Pdm4arAgent(Agent):
         self.replan_t = best_path.t[-1]
         best_path.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(best_path.delta)
-        print("Best path ddelta: ", np.max(np.abs(ddelta)))
+        logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
 
         timestamps = list(best_path.t + current_time)
         states = [
@@ -151,6 +154,7 @@ class Pdm4arAgent(Agent):
         states[0] = current_state
         states[-1].psi = self.initial_psi  # assume heading aligned to lane at the end of trajectory
         states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix  for delta bump
+
         self.agent_traj = Trajectory(timestamps, states)
         self.plans.append(self.agent_traj)
         self.controller.set_reference(self.agent_traj)
@@ -183,52 +187,36 @@ class Pdm4arAgent(Agent):
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
             all_samples = self.trigger_replan(sim_obs)
 
-            self.visualizer.plot_scenario(sim_obs)
-            feas_trajectories = []
-            feas_idx = [idx for idx, sample in enumerate(all_samples) if sample.cost != np.inf]
-            if len(feas_idx) > 0:
-                for s_idx in np.random.choice(feas_idx, 50):
-                    path = all_samples[s_idx]
-                    path.compute_steering(self.sg.wheelbase)
-                    timestamps = list(path.t + current_time)
-                    states = [
-                        VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i])
-                        for i in range(path.T)
-                    ]
-                    feas_trajectories.append(Trajectory(timestamps, states))
-                self.visualizer.plot_trajectories(feas_trajectories, colors=["royalblue" for traj in feas_trajectories])
-                self.visualizer.save_fig("../../out/12/samples_feas" + str(len(self.plans)) + ".png")
+            if self.visualize:
+                self.visualizer.plot_scenario(sim_obs)
+                self.visualizer.plot_samples(all_samples, self.sg.wheelbase, len(self.plans))
                 self.visualizer.clear_viz()
 
-            all_trajectories = []
+        if self.visualize:
             self.visualizer.plot_scenario(sim_obs)
-            for s_idx in np.random.choice(range(len(all_samples)), 50):
-                path = all_samples[s_idx]
-                path.compute_steering(self.sg.wheelbase)
-                timestamps = list(path.t + current_time)
-                states = [
-                    VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)
-                ]
-                all_trajectories.append(Trajectory(timestamps, states))
-            self.visualizer.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories])
-            self.visualizer.save_fig("../../out/12/samples" + str(len(self.plans)) + ".png")
-            self.visualizer.clear_viz()
-
-        self.visualizer.plot_scenario(sim_obs)
-        self.visualizer.plot_trajectories(
-            [my_traj, *self.plans], colors=["firebrick", *["green" for plan in self.plans]]
-        )
-        self.visualizer.save_fig()
+            self.visualizer.plot_trajectories(
+                [my_traj, *self.plans], colors=["firebrick", *["green" for plan in self.plans]]
+            )
+            self.visualizer.save_fig()
 
         # rnd_acc = random.random() * self.params.param1 * 0
         # rnd_ddelta = (random.random() - 0.5) * self.params.param1 * 0
 
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
-        self.controller.plot_controller_perf(len(self.plans))
-        self.controller.clear_viz()
 
-        return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta)
+        if self.visualize:
+            self.controller.plot_controller_perf(len(self.plans))
+            self.controller.clear_viz()
+
+        pt = np.stack([my_state.x, my_state.y])
+        ref_idx = np.argmin(np.linalg.norm(self.reference - pt, ord=2, axis=1))
+        ref_pt = self.reference[ref_idx]
+        heading = [np.cos(my_state.psi), np.sin(my_state.psi)]
+        cross = np.cross(heading, pt - ref_pt)
+        lights_cmd = LIGHTS_TURN_LEFT if cross > 0 else LIGHTS_TURN_RIGHT
+
+        return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta, lights=lights_cmd)
 
     def check_paths(self, fplist) -> tuple[int, float]:
 

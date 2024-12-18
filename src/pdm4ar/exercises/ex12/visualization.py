@@ -10,6 +10,7 @@ from dg_commons import Color
 from dg_commons.maps.shapely_viz import ShapelyViz
 from dg_commons.planning.trajectory import Trajectory
 from dg_commons.sim.simulator_structures import InitSimObservations, SimObservations
+from dg_commons.sim.models.vehicle import VehicleCommands, VehicleState
 
 from commonroad.visualization.draw_params import MPDrawParams
 from commonroad.visualization.mp_renderer import MPRenderer
@@ -129,3 +130,27 @@ class Visualizer:
         ax = self.shapely_viz.ax
         ax.autoscale()
         ax.set_aspect("equal")
+
+    def plot_samples(self, samples, wb, num_plan):
+        feas_trajectories = []
+        feas_idx = [idx for idx, sample in enumerate(samples) if sample.cost != np.inf]
+        if len(feas_idx) > 0:
+            for s_idx in np.random.choice(feas_idx, 50):
+                path = samples[s_idx]
+                path.compute_steering(wb)
+                timestamps = list(path.t)
+                states = [
+                    VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)
+                ]
+                feas_trajectories.append(Trajectory(timestamps, states))
+            self.plot_trajectories(feas_trajectories, colors=["royalblue" for traj in feas_trajectories])
+
+        all_trajectories = []
+        for s_idx in np.random.choice(range(len(samples)), 50):
+            path = samples[s_idx]
+            path.compute_steering(wb)
+            timestamps = list(path.t)
+            states = [VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)]
+            all_trajectories.append(Trajectory(timestamps, states))
+        self.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories], alpha=0.2)
+        self.save_fig("../../out/12/samples" + str(num_plan) + ".png")

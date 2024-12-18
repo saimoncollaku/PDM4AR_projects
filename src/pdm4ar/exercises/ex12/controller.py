@@ -128,7 +128,7 @@ class MPController:
 
 class BasicController:
 
-    def __init__(self, vehicle_params, vehicle_geom):
+    def __init__(self, vehicle_params, vehicle_geom, visualize):
         self.target_traj = None
         self.sp = vehicle_params
         self.sg = vehicle_geom
@@ -149,8 +149,11 @@ class BasicController:
         self.dt = 0.1
         self.l = self.sg.lf
         self.curr_idx = -1
-        self.fig, self.axes = plt.subplots(2, 1)
         self.curr_states = []
+
+        self.visualize = visualize
+        if self.visualize:
+            self.fig, self.axes = plt.subplots(2, 1)
 
     def plot_controller_perf(self, t):
         target_states = [[state.vx, state.delta] for state in self.target_traj.values]
@@ -190,11 +193,12 @@ class BasicController:
 
     def set_reference(self, target):
         self.target_traj = target
-        self.fig, self.axes = plt.subplots(2, 1)
         self.curr_idx = 0
         self.curr_states = []
         self.error_v = []
         self.error_psi = []
+        if self.visualize:
+            self.fig, self.axes = plt.subplots(2, 1)
 
     def update_progress(self, curr_state):
         dx = [state.x - curr_state.x for state in self.target_traj.values]

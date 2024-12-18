@@ -48,9 +48,9 @@ class KinematicsFilter:
             self.acceleration_filter()
             and self.curvature_filter()
             and self.yaw_filter()
-            and self.delta_filter()
-            and self.velocity_filter()
-            and self.goal_filter()
+            # and self.delta_filter()
+            # and self.velocity_filter()
+            # and self.goal_filter()
         )
 
     def acceleration_filter(self):
@@ -109,23 +109,26 @@ class KinematicsFilter:
 class CollisionFilter:
     __trajectory: Sample
 
-    def __init__(self, init_obs):
+    def __init__(self, init_obs, visualize):
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
+        self.visualize = visualize
 
     def check(self, trajectory: Sample, sim_obs):
         self.__trajectory = trajectory
         collides = False
-        self.fig, self.axes = plt.subplots()
-        # self.axes.scatter(self.__trajectory.x, self.__trajectory.y, c="b")
-        self.axes.autoscale()
+        if self.visualize:
+            self.fig, self.axes = plt.subplots()
+            # self.axes.scatter(self.__trajectory.x, self.__trajectory.y, c="b")
+            self.axes.autoscale()
         for player in sim_obs.players:
             if player != self.name:
                 collides = self.collision_filter(sim_obs.players[player].state, sim_obs.players[player].occupancy)
                 if collides:
                     break
-        self.fig.savefig("../../out/12/collision_check.png")
-        plt.close(self.fig)
+        if self.visualize:
+            self.fig.savefig("../../out/12/collision_check.png")
+            plt.close(self.fig)
         return collides
 
     def get_box(self, x, y, psi, inflate=0.0):
@@ -157,11 +160,12 @@ class CollisionFilter:
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
             self_box = self.get_box(pt_x, pt_y, pt_psi)
 
-            sbx, sby = self_box.exterior.xy
-            self.axes.plot(sbx, sby, color="firebrick", alpha=0.4)
-            self.axes.fill(sbx, sby, color="firebrick", alpha=i / self.__trajectory.T * 0.4)
+            if self.visualize:
+                sbx, sby = self_box.exterior.xy
+                self.axes.plot(sbx, sby, color="firebrick", alpha=0.4)
+                self.axes.fill(sbx, sby, color="firebrick", alpha=i / self.__trajectory.T * 0.4)
 
-            # for j in range(max(0, i - 5), min(self.__trajectory.T, i + 5)):
+            # for j in range(max(0, i - 1), min(self.__trajectory.T, i + 1)):
             j = i
             obx, oby = obs_box.exterior.xy
             obs_x = np.array(obx) + (j * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
@@ -172,13 +176,14 @@ class CollisionFilter:
             if self_box.intersects(obs_box_t):
                 return True
 
-            self.axes.plot(obs_x, obs_y, color="royalblue", alpha=0.1)
-            self.axes.fill(
-                obs_x,
-                obs_y,
-                color=plt.get_cmap("viridis")(j / self.__trajectory.T),
-                alpha=j / self.__trajectory.T * 0.1,
-            )
+            if self.visualize:
+                self.axes.plot(obs_x, obs_y, color="royalblue", alpha=0.1)
+                self.axes.fill(
+                    obs_x,
+                    obs_y,
+                    color=plt.get_cmap("viridis")(j / self.__trajectory.T),
+                    alpha=j / self.__trajectory.T * 0.1,
+                )
 
         return False
 
@@ -192,16 +197,17 @@ class Cost:
     weights: dict
     cost_functions: list
 
-    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray) -> None:
+    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: np.ndarray) -> None:
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
         self.__reference = ref_line[::100]
         self.weights = {
-            self.penalize_acceleration: 0.1,  # 1e1 order
-            self.penalize_closeness_from_obstacles: 0.02,  # 1e-1 order
-            self.penalize_deviation_from_reference: 0.2,  # 1e1 order
-            self.penalize_jerk: 0.005,  # 1e2 order
-            self.penalize_velocity: 0.005,  # 1e2 order
+            self.penalize_acceleration: fn_weights[0],  # 1e1 order
+            # self.penalize_closeness_from_obstacles: 0.02,  # 1e-1 order
+            self.penalize_closeness_from_obstacles: fn_weights[1],  # 1e-1 order
+            self.penalize_deviation_from_reference: fn_weights[2],  # 1e1 order
+            self.penalize_jerk: fn_weights[3],  # 1e2 order
+            self.penalize_velocity: fn_weights[4],  # 1e2 order
         }
         self.cost_functions = list(self.weights.keys())
 
@@ -229,6 +235,16 @@ class Cost:
         ]
         return Polygon(box_corners)
 
+    def set_weights(self, weights):
+        self.weights = {
+            self.penalize_acceleration: weights[0],  # 1e1 order
+            # self.penalize_closeness_from_obstacles: 0.02,  # 1e-1 order
+            self.penalize_closeness_from_obstacles: weights[1],  # 1e-1 order
+            self.penalize_deviation_from_reference: weights[2],  # 1e1 order
+            self.penalize_jerk: weights[3],  # 1e2 order
+            self.penalize_velocity: weights[4],  # 1e2 order
+        }
+
     def get(self, trajectory: Sample, sim_obs: SimObservations):
         self.__observations = sim_obs
         self.__trajectory = trajectory
@@ -249,8 +265,8 @@ class Cost:
     def trajectory(self):
         return self.__trajectory
 
-    # def set_vis(self, fig, axes):
-    #     self.fig, self.axes = fig, axes
+    def set_vis(self, fig, axes):
+        self.fig, self.axes = fig, axes
 
     def penalize_acceleration(self):
         pure_acceleration = scalar_value(self.__trajectory.xdotdot, self.__trajectory.ydotdot)
@@ -272,7 +288,8 @@ class Cost:
         return cost
 
     def penalize_deviation_from_reference(self):
-        pts = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
+        from_idx = int(self.__trajectory.T / 2)
+        pts = np.stack([self.__trajectory.x[from_idx:], self.__trajectory.y[from_idx:]], axis=1)
         dist = [np.min(np.linalg.norm(self.__reference - pt, ord=2, axis=1)) for pt in pts]
         return simpson(np.square(dist), dx=self.__trajectory.dt)
 
@@ -320,19 +337,31 @@ class Evaluator:
     kinematics_filter: KinematicsFilter
     collision_filter: CollisionFilter
     trajectory_cost: Cost
+    visualize: bool = False
 
     def __init__(
-        self, init_obs: InitSimObservations, spline_ref: SplineReference, sp: VehicleParameters, sg: VehicleGeometry
+        self,
+        init_obs: InitSimObservations,
+        spline_ref: SplineReference,
+        sp: VehicleParameters,
+        sg: VehicleGeometry,
+        visualize: bool,
     ) -> None:
         self.kinematics_filter = KinematicsFilter(sp, sg)
-        self.collision_filter = CollisionFilter(init_obs)
+        self.collision_filter = CollisionFilter(init_obs, visualize)
         ref_line = np.column_stack((spline_ref.x, spline_ref.y))
-        self.trajectory_cost = Cost(init_obs, ref_line)
+
+        # acc, obs, ref, jerk, vel
+        self.fn_weights = [0.1, 5.0, 1.0, 0.005, 0.002]
+
+        self.trajectory_cost = Cost(init_obs, ref_line, self.fn_weights)
         self.spline_ref = spline_ref
 
-        # self.fig, self.axes = plt.subplots()
-        # self.axes.autoscale()
-        # self.trajectory_cost.set_vis(self.fig, self.axes)
+        self.visualize = visualize
+        if self.visualize:
+            self.fig, self.axes = plt.subplots()
+            self.axes.autoscale()
+            self.trajectory_cost.set_vis(self.fig, self.axes)
 
     def get_best_path(self, all_samples: list[Sample], sim_obs: SimObservations):
         costs = -np.ones(len(all_samples))
@@ -354,10 +383,11 @@ class Evaluator:
         print(best_path_index, costs[best_path_index])
         all_samples[best_path_index].collision_free = True
 
-        # self.fig.savefig("../../out/12/traj_cost.png")
-        # plt.close(self.fig)
-        # self.fig, self.axes = plt.subplots()
-        # self.trajectory_cost.set_vis(self.fig, self.axes)
+        if self.visualize:
+            self.fig.savefig("../../out/12/traj_cost.png")
+            plt.close(self.fig)
+            self.fig, self.axes = plt.subplots()
+            self.trajectory_cost.set_vis(self.fig, self.axes)
 
         return best_path_index, costs
 
