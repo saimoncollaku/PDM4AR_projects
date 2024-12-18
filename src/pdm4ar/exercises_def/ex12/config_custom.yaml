@@ -1,14 +1,14 @@
-task_level: 1
+task_level: 2
 
 testcases:
   -
-    scenario: "ZAM_Zip-1_64_T-1"
-    max_sim_time: 10.0
+    scenario: "ESP_Mad-1_10_I-1-1.cr"
+    max_sim_time: 15.0
     ego:
-      original_name: P0
-      goal_lane_id: 26
+      original_name: P14
+      goal_lane_id: 7
     others:
-      names: [P1, P2]
-    description: "scenario1"
-    
+      names: [P7, P10, P13, P17, P18, P19, P21]
+    description: "scenario2"
+
 seed: 98

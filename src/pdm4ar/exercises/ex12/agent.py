@@ -171,6 +171,8 @@ class Pdm4arAgent(Agent):
         self.controller.set_reference(self.agent_traj)
         self.last_replan_time = current_time
 
+        return all_samples
+
     def get_commands(self, sim_obs: SimObservations) -> VehicleCommands:
         """This method is called by the simulator every dt_commands seconds (0.1s by default).
         Do not modify the signature of this method.
@@ -193,31 +195,31 @@ class Pdm4arAgent(Agent):
             self.create_sampler(my_state)
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
-            self.trigger_replan(sim_obs)
+            all_samples = self.trigger_replan(sim_obs)
 
-            # self.visualizer.plot_scenario(sim_obs)
-            # trajectories = []
-            # for sample in np.random.choice(num_traj, 10):
-            #     cp = self.spline_ref.to_cartesian(self.sampler.last_samples[sample])
-            #     timestamps = list(cp[1])
-            #     states = [
-            #         VehicleState(
-            #             cp[0][i][0],
-            #             cp[0][i][1],
-            #             (
-            #                 np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
-            #                 if i < cp[0].shape[0] - 1
-            #                 else my_state.psi
-            #             ),
-            #             cp[2][i],
-            #             0,
-            #         )
-            #         for i in range(cp[0].shape[0])
-            #     ]
-            #     trajectories.append(Trajectory(timestamps, states))
-            # self.visualizer.plot_trajectories(trajectories, colors=None)
-            # self.visualizer.save_fig("../../out/12/samples" + str(round(current_time, 2)) + ".png")
-            # self.visualizer.clear_viz()
+            self.visualizer.plot_scenario(sim_obs)
+            trajectories = []
+            for sample in np.random.choice(len(all_samples), 50):
+                cp = self.spline_ref.to_cartesian(self.sampler.last_samples[sample])
+                timestamps = list(cp[1])
+                states = [
+                    VehicleState(
+                        cp[0][i][0],
+                        cp[0][i][1],
+                        (
+                            np.arctan2(cp[0][i + 1][1] - cp[0][i][1], cp[0][i + 1][0] - cp[0][i][0])
+                            if i < cp[0].shape[0] - 1
+                            else my_state.psi
+                        ),
+                        cp[2][i],
+                        0,
+                    )
+                    for i in range(cp[0].shape[0])
+                ]
+                trajectories.append(Trajectory(timestamps, states))
+            self.visualizer.plot_trajectories(trajectories, colors=None)
+            self.visualizer.save_fig("../../out/12/samples" + str(round(current_time, 2)) + ".png")
+            self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)
         self.visualizer.plot_trajectories(
