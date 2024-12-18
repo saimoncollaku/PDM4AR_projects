@@ -184,17 +184,34 @@ class Pdm4arAgent(Agent):
             all_samples = self.trigger_replan(sim_obs)
 
             self.visualizer.plot_scenario(sim_obs)
-            trajectories = []
-            for s_idx in np.random.choice([idx for idx, sample in enumerate(all_samples) if sample.cost != np.inf], 50):
+            feas_trajectories = []
+            feas_idx = [idx for idx, sample in enumerate(all_samples) if sample.cost != np.inf]
+            if len(feas_idx) > 0:
+                for s_idx in np.random.choice(feas_idx, 50):
+                    path = all_samples[s_idx]
+                    path.compute_steering(self.sg.wheelbase)
+                    timestamps = list(path.t + current_time)
+                    states = [
+                        VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i])
+                        for i in range(path.T)
+                    ]
+                    feas_trajectories.append(Trajectory(timestamps, states))
+                self.visualizer.plot_trajectories(feas_trajectories, colors=["royalblue" for traj in feas_trajectories])
+                self.visualizer.save_fig("../../out/12/samples_feas" + str(len(self.plans)) + ".png")
+                self.visualizer.clear_viz()
+
+            all_trajectories = []
+            self.visualizer.plot_scenario(sim_obs)
+            for s_idx in np.random.choice(range(len(all_samples)), 50):
                 path = all_samples[s_idx]
                 path.compute_steering(self.sg.wheelbase)
                 timestamps = list(path.t + current_time)
                 states = [
                     VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)
                 ]
-                trajectories.append(Trajectory(timestamps, states))
-            self.visualizer.plot_trajectories(trajectories, colors=None)
-            self.visualizer.save_fig("../../out/12/samples_feas" + str(len(self.plans)) + ".png")
+                all_trajectories.append(Trajectory(timestamps, states))
+            self.visualizer.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories])
+            self.visualizer.save_fig("../../out/12/samples" + str(len(self.plans)) + ".png")
             self.visualizer.clear_viz()
 
         self.visualizer.plot_scenario(sim_obs)

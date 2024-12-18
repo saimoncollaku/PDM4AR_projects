@@ -3,6 +3,7 @@
 # Collision & trajectory check
 # Score candidate trajectories - cost functions, kinematic check & collision check > Behaviour, Velocity, Occlusion Planner
 
+from tkinter.tix import PopupMenu
 from shapely.geometry import Polygon
 from matplotlib import pyplot as plt
 import numpy as np
@@ -120,56 +121,64 @@ class CollisionFilter:
         self.axes.autoscale()
         for player in sim_obs.players:
             if player != self.name:
-                collides = self.collision_filter(sim_obs.players[player].state)
+                collides = self.collision_filter(sim_obs.players[player].state, sim_obs.players[player].occupancy)
                 if collides:
                     break
         self.fig.savefig("../../out/12/collision_check.png")
         plt.close(self.fig)
         return collides
 
-    def get_box(self, x, y, psi):
+    def get_box(self, x, y, psi, inflate=0.0):
         # can only assume all cars have same geometry
         cos_psi, sin_psi = np.cos(psi), np.sin(psi)
+        lr, lf, wh = self.sg.lr + inflate, self.sg.lf + inflate, self.sg.w_half + inflate
         box_corners = [
             [
-                x - self.sg.lr * cos_psi + self.sg.w_half * sin_psi,
-                y - self.sg.lr * sin_psi - self.sg.w_half * cos_psi,
+                x - lr * cos_psi + wh * sin_psi,
+                y - lr * sin_psi - wh * cos_psi,
             ],
             [
-                x - self.sg.lr * cos_psi - self.sg.w_half * sin_psi,
-                y - self.sg.lr * sin_psi + self.sg.w_half * cos_psi,
+                x - lr * cos_psi - wh * sin_psi,
+                y - lr * sin_psi + wh * cos_psi,
             ],
             [
-                x + self.sg.lf * cos_psi - self.sg.w_half * sin_psi,
-                y + self.sg.lf * sin_psi + self.sg.w_half * cos_psi,
+                x + lf * cos_psi - wh * sin_psi,
+                y + lf * sin_psi + wh * cos_psi,
             ],
             [
-                x + self.sg.lf * cos_psi + self.sg.w_half * sin_psi,
-                y + self.sg.lf * sin_psi - self.sg.w_half * cos_psi,
+                x + lf * cos_psi + wh * sin_psi,
+                y + lf * sin_psi - wh * cos_psi,
             ],
         ]
         return Polygon(box_corners)
 
-    def collision_filter(self, obs_state):
+    def collision_filter(self, obs_state, obs_box):
         for i in range(self.__trajectory.T):
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
             self_box = self.get_box(pt_x, pt_y, pt_psi)
 
-            obs_x = obs_state.x + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
-            obs_y = obs_state.y + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
-            obs_box = self.get_box(obs_x, obs_y, obs_state.psi)
-
-            # dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
-            if self_box.intersects(obs_box):
-                return True
-
             sbx, sby = self_box.exterior.xy
             self.axes.plot(sbx, sby, color="firebrick", alpha=0.4)
-            self.axes.fill(sbx, sby, color="firebrick", alpha=0.2)
+            self.axes.fill(sbx, sby, color="firebrick", alpha=i / self.__trajectory.T * 0.4)
 
+            # for j in range(max(0, i - 5), min(self.__trajectory.T, i + 5)):
+            j = i
             obx, oby = obs_box.exterior.xy
-            self.axes.plot(sbx, sby, color="royalblue", alpha=0.4)
-            self.axes.fill(obx, oby, color="royalblue", alpha=0.2)
+            obs_x = np.array(obx) + (j * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
+            obs_y = np.array(oby) + (j * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+
+            obs_box_t = Polygon(zip(obs_x, obs_y))
+            # dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
+            if self_box.intersects(obs_box_t):
+                return True
+
+            self.axes.plot(obs_x, obs_y, color="royalblue", alpha=0.1)
+            self.axes.fill(
+                obs_x,
+                obs_y,
+                color=plt.get_cmap("viridis")(j / self.__trajectory.T),
+                alpha=j / self.__trajectory.T * 0.1,
+            )
 
         return False
 
@@ -185,15 +194,40 @@ class Cost:
 
     def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray) -> None:
         self.name = init_obs.my_name
+        self.sg = init_obs.model_geometry
         self.__reference = ref_line[::100]
         self.weights = {
             self.penalize_acceleration: 0.1,  # 1e1 order
-            self.penalize_closeness_from_obstacles: 10.0,  # 1e-1 order
-            self.penalize_deviation_from_reference: 1.0,  # 1e1 order
-            self.penalize_jerk: 0.1,  # 1e2 order
-            self.penalize_velocity: 0.05,  # 1e2 order
+            self.penalize_closeness_from_obstacles: 0.02,  # 1e-1 order
+            self.penalize_deviation_from_reference: 0.2,  # 1e1 order
+            self.penalize_jerk: 0.005,  # 1e2 order
+            self.penalize_velocity: 0.005,  # 1e2 order
         }
         self.cost_functions = list(self.weights.keys())
+
+    def get_box(self, x, y, psi, inflate=0.0):
+        # can only assume all cars have same geometry
+        cos_psi, sin_psi = np.cos(psi), np.sin(psi)
+        lr, lf, wh = self.sg.lr + inflate, self.sg.lf + inflate, self.sg.w_half + inflate
+        box_corners = [
+            [
+                x - lr * cos_psi + wh * sin_psi,
+                y - lr * sin_psi - wh * cos_psi,
+            ],
+            [
+                x - lr * cos_psi - wh * sin_psi,
+                y - lr * sin_psi + wh * cos_psi,
+            ],
+            [
+                x + lf * cos_psi - wh * sin_psi,
+                y + lf * sin_psi + wh * cos_psi,
+            ],
+            [
+                x + lf * cos_psi + wh * sin_psi,
+                y + lf * sin_psi - wh * cos_psi,
+            ],
+        ]
+        return Polygon(box_corners)
 
     def get(self, trajectory: Sample, sim_obs: SimObservations):
         self.__observations = sim_obs
@@ -243,21 +277,42 @@ class Cost:
         return simpson(np.square(dist), dx=self.__trajectory.dt)
 
     def penalize_closeness_from_obstacles(self):
-        ts = np.linspace(0, self.__trajectory.dt * self.__trajectory.T, self.__trajectory.T)
-        player_pos = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
+        # ts = np.linspace(0, self.__trajectory.dt * self.__trajectory.T, self.__trajectory.T)
+        # player_pos = np.stack([self.__trajectory.x, self.__trajectory.y], axis=1)
+        # cost = 0
+
+        # for player in self.__observations.players:
+        #     if player != self.name:
+        #         obs_state = self.__observations.players[player].state
+        #         assert isinstance(obs_state, VehicleState)
+        #         T = len(ts)
+        #         obs_pos = np.zeros((T, 2))
+        #         obs_pos[:, 0] = obs_state.x + obs_state.vx * np.cos(obs_state.psi) * ts
+        #         obs_pos[:, 1] = obs_state.y + obs_state.vx * np.sin(obs_state.psi) * ts
+
+        #         cost += 1 / (np.min(np.linalg.norm(obs_pos - player_pos, ord=2, axis=1)) ** 2)
+
         cost = 0
+        for i in range(self.__trajectory.T):
+            pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
+            self_box = self.get_box(pt_x, pt_y, pt_psi)
 
-        for player in self.__observations.players:
-            if player != self.name:
-                obs_state = self.__observations.players[player].state
-                assert isinstance(obs_state, VehicleState)
-                T = len(ts)
-                obs_pos = np.zeros((T, 2))
-                obs_pos[:, 0] = obs_state.x + obs_state.vx * np.cos(obs_state.psi) * ts
-                obs_pos[:, 1] = obs_state.y + obs_state.vx * np.sin(obs_state.psi) * ts
+            dist = []
+            for player in self.__observations.players:
+                if player != self.name:
+                    obs_box = self.__observations.players[player].occupancy
+                    obs_state = self.__observations.players[player].state
+                    obx, oby = obs_box.exterior.xy
 
-                dist = np.linalg.norm(obs_pos - player_pos, ord=2, axis=1)
-                cost += simpson(1 / (dist**2), dx=self.__trajectory.dt)
+                    obs_x = np.array(obx) + (i * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
+                    obs_y = np.array(oby) + (i * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+
+                    obs_box_t = Polygon(zip(obs_x, obs_y))
+                    dist.append(self_box.distance(obs_box_t))
+
+            pen = min(dist)
+            cost += 1 / (pen**2) if pen > 0 else 1e3
+
         return cost
 
 
@@ -287,8 +342,11 @@ class Evaluator:
             #     print(costs_dict)
             costs[i] = sum(costs_dict.values())
         path_sort_idx = np.argsort(costs)
+        best_path_index = -1
         for path_idx in path_sort_idx:
-            print(self.get_costs(all_samples[path_idx], sim_obs))
+            if np.isinf(costs[path_idx]):
+                continue
+            print(costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs))
             collides = self.collision_filter.check(all_samples[path_idx], sim_obs)
             if not collides:
                 best_path_index = path_idx
