@@ -141,6 +141,12 @@ class Pdm4arAgent(Agent):
             )
         )
 
+        start_pt = np.stack([best_path.x[0], best_path.y[0]])
+        start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
+        end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
+        end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
+        logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+
         self.replan_t = best_path.t[-1]
         best_path.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(best_path.delta)

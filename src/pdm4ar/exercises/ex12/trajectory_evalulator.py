@@ -314,7 +314,7 @@ class Cost:
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
             self_box = self.get_box(pt_x, pt_y, pt_psi)
 
-            dist = []
+            dist = [1e3]
             for player in self.__observations.players:
                 if player != self.name:
                     obs_box = self.__observations.players[player].occupancy
@@ -375,12 +375,16 @@ class Evaluator:
         for path_idx in path_sort_idx:
             if np.isinf(costs[path_idx]):
                 continue
-            print(costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs))
+            print(
+                "Checking path {}: Total cost: {}, {}".format(
+                    costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
+                )
+            )
             collides = self.collision_filter.check(all_samples[path_idx], sim_obs)
             if not collides:
                 best_path_index = path_idx
                 break
-        print(best_path_index, costs[best_path_index])
+        # print(best_path_index, costs[best_path_index])
         all_samples[best_path_index].collision_free = True
 
         if self.visualize:
