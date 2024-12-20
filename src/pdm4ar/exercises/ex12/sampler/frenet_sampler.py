@@ -133,7 +133,7 @@ class FrenetSampler:
         self.v_res = 2
 
         # ! CAN BE CHANGED
-        self.dt = 0.2
+        self.dt = 0.1
         self.max_t = 2.6
         self.min_t = 2.0
 

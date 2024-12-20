@@ -352,7 +352,7 @@ class Evaluator:
         ref_line = np.column_stack((spline_ref.x, spline_ref.y))
 
         # acc, obs, ref, jerk, vel
-        self.fn_weights = [0.1, 5.0, 1.0, 0.005, 0.002]
+        self.fn_weights = [0.1, 1.0, 2.0, 0.005, 0.002]
 
         self.trajectory_cost = Cost(init_obs, ref_line, self.fn_weights)
         self.spline_ref = spline_ref

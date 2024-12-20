@@ -198,6 +198,7 @@ class Pdm4arAgent(Agent):
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
             all_samples = self.trigger_replan(sim_obs)
+            logger.warning("Replanning at {}".format(current_time))
 
             if self.visualize:
                 self.visualizer.plot_scenario(sim_obs)
@@ -217,9 +218,9 @@ class Pdm4arAgent(Agent):
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
 
-        # if self.visualize:
-        # self.controller.plot_controller_perf(len(self.plans))
-        # self.controller.clear_viz()
+        if self.visualize:
+            self.controller.plot_controller_perf(len(self.plans))
+            self.controller.clear_viz()
 
         pt = np.stack([my_state.x, my_state.y])
         ref_idx = np.argmin(np.linalg.norm(self.reference - pt, ord=2, axis=1))
