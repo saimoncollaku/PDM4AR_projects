@@ -108,9 +108,15 @@ class Pdm4arAgent(Agent):
         current_frenet = self.spline_ref.to_frenet(current_cart)
         road_l = self.road_distances[0]
         road_r = self.road_distances[1]
-        road_generic = self.road_distances[2]
+        road_generic = self.road_distances[2] / 8
         c_d = current_frenet[0][1]
         s0 = current_frenet[0][0]
+        if c_d > 0:
+            road_l = abs(c_d)
+            road_r = 0
+        else:
+            road_l = 0
+            road_r = abs(c_d)
         # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 

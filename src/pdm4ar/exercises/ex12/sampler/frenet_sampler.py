@@ -130,12 +130,12 @@ class FrenetSampler:
 
         self.min_v = min_speed
         self.max_v = max_speed
-        self.v_res = 1
+        self.v_res = 2
 
         # ! CAN BE CHANGED
-        self.dt = 0.1
-        self.max_t = 3.5
-        self.min_t = 3.0
+        self.dt = 0.2
+        self.max_t = 2.6
+        self.min_t = 2.0
 
     # TODO, its possible that we need to make another path maker for low speed
     def get_paths_merge(self) -> list[Sample]:
