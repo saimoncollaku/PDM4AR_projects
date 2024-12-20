@@ -377,7 +377,7 @@ class Evaluator:
                 continue
             print(
                 "Checking path {}: Total cost: {}, {}".format(
-                    costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
+                    path_idx, costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
                 )
             )
             collides = self.collision_filter.check(all_samples[path_idx], sim_obs)
