@@ -88,7 +88,7 @@ class Pdm4arAgent(Agent):
         self.spline_ref = SplineReference(reference_points, resolution=int(1e5))
         self.reference = np.column_stack((self.spline_ref.x, self.spline_ref.y))[::100]
 
-        self.visualize = False
+        self.visualize = True
 
         self.planner = Planner()
         self.controller = Controller(self.sp, self.sg, self.visualize)
@@ -108,7 +108,7 @@ class Pdm4arAgent(Agent):
         current_frenet = self.spline_ref.to_frenet(current_cart)
         road_l = self.road_distances[0]
         road_r = self.road_distances[1]
-        road_generic = self.road_distances[2] / 8
+        road_generic = self.road_distances[2] / 2
         c_d = current_frenet[0][1]
         s0 = current_frenet[0][0]
         if c_d > 0:
@@ -217,9 +217,9 @@ class Pdm4arAgent(Agent):
         # return VehicleCommands(acc=rnd_acc, ddelta=rnd_ddelta)
         cmd_acc, cmd_ddelta = self.controller.get_controls(my_state, sim_obs.time)
 
-        if self.visualize:
-            self.controller.plot_controller_perf(len(self.plans))
-            self.controller.clear_viz()
+        # if self.visualize:
+        # self.controller.plot_controller_perf(len(self.plans))
+        # self.controller.clear_viz()
 
         pt = np.stack([my_state.x, my_state.y])
         ref_idx = np.argmin(np.linalg.norm(self.reference - pt, ord=2, axis=1))

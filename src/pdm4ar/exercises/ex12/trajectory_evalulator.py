@@ -48,7 +48,7 @@ class KinematicsFilter:
             self.acceleration_filter()
             and self.curvature_filter()
             and self.yaw_filter()
-            # and self.delta_filter()
+            and self.delta_filter()
             # and self.velocity_filter()
             # and self.goal_filter()
         )
