@@ -71,7 +71,8 @@ class Exercise(Generic[ExInT, ExOutT]):
     def __post_init__(self):
         if self.expected_results:
             assert len(self.expected_results) == len(
-                    self.test_values), "Mismatch between expected values and test cases"
+                self.test_values
+            ), "Mismatch between expected values and test cases"
         # wrap evaluation function with timeout
         self.evaluation_fun = run_with_timer(self.evaluation_fun, self.test_case_timeout)
 
@@ -102,20 +103,17 @@ class ExerciseEvaluator(ABC):
         r = Report("Evaluation")
         n_test_values = len(self.ex.test_values)
         n_completed_test_cases = n_test_values - n_failed_test_cases
-        r.text("Evaluated",
-               text=f"Test cases completion ratio:\n\t"
-                    f"({n_completed_test_cases}/{n_test_values})")
+        r.text("Evaluated", text=f"Test cases completion ratio:\n\t" f"({n_completed_test_cases}/{n_test_values})")
 
-        agg_perf = self.ex.perf_aggregator(
-                [out_res[0] for out_res in eval_outputs])
+        agg_perf = self.ex.perf_aggregator([out_res[0] for out_res in eval_outputs])
 
         overall_perf = AggregatedPerformanceRes(
-                n_completed_test_cases=n_completed_test_cases,
-                n_test_cases=n_test_values,
-                exceptions=exceptions,
-                perf_res=agg_perf)
-        r.text("OverallPerformance",
-               text=pprint.pformat(overall_perf))
+            n_completed_test_cases=n_completed_test_cases,
+            n_test_cases=n_test_values,
+            exceptions=exceptions,
+            perf_res=agg_perf,
+        )
+        r.text("OverallPerformance", text=pprint.pformat(overall_perf))
 
         # append all reports
         for i, out_res in enumerate(eval_outputs):

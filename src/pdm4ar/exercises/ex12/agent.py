@@ -49,6 +49,8 @@ class Pdm4arAgent(Agent):
     planner: Planner
     sampler: FrenetSampler
 
+    replan_count: int
+
     road_distances: tuple[float, float, float]
     spline_ref: SplineReference
 
@@ -63,10 +65,9 @@ class Pdm4arAgent(Agent):
         self.params = Pdm4arAgentParams()
         self.myplanner = ()
 
-        # * SAIMON PARAMS
+        self.replan_count = 0
         self.last_replan_time = 0
         self.replan_t = 99
-        self.best_fp = None
 
     def on_episode_init(self, init_obs: InitSimObservations):
         """This method is called by the simulator only at the beginning of each simulation.
@@ -123,9 +124,31 @@ class Pdm4arAgent(Agent):
     def reinitialize_sampler(self, current_state: VehicleState):
         current_cart = np.column_stack((current_state.x, current_state.y))
         current_frenet = self.spline_ref.to_frenet(current_cart)
-        c_d = current_frenet[0][1]
+        d0 = current_frenet[0][1]
         s0 = current_frenet[0][0]
-        self.sampler.assign_init_pos(s0, c_d, current_state.vx)
+        sdot = current_state.vx * np.cos(current_state.psi - self.initial_psi)
+        ddot = current_state.vx * np.sin(current_state.psi - self.initial_psi)
+        self.sampler.assign_init_kinematics(s0, d0, sdot, ddot)
+
+    def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
+        dt = self.sampler.dt
+
+        ux = init_state.vx * np.cos(self.initial_psi)
+        uy = init_state.vx * np.sin(self.initial_psi)
+        max_deceleration = self.sp.acc_limits[0]
+        ax = max_deceleration * np.cos(self.initial_psi)
+        ay = max_deceleration * np.sin(self.initial_psi)
+        states = []
+        for step in range(time_steps):
+            t = dt * step
+            v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
+            vx = v * np.cos(self.initial_psi)
+            vy = v * np.sin(self.initial_psi)
+            x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
+            state = VehicleState(x=x, y=y, psi=self.initial_psi, vx=vx, delta=0)
+            states.append(state)
+        timesteps = np.linspace(current_time, current_time + time_steps * dt, time_steps).tolist()
+        return Trajectory(timesteps, states)
 
     def trigger_replan(self, sim_obs: SimObservations):
         current_state = sim_obs.players[self.name].state
@@ -146,31 +169,36 @@ class Pdm4arAgent(Agent):
                 best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free
             )
         )
+        logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")
+        if not (best_path.kinematics_feasible and best_path.collision_free):
+            logger.warning("Entering emergency trajectory")
+            timesteps = 10
+            agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
+            self.replan_t = timesteps * self.sampler.dt
+        else:
+            start_pt = np.stack([best_path.x[0], best_path.y[0]])
+            start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
+            end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
+            end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
+            logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
-        start_pt = np.stack([best_path.x[0], best_path.y[0]])
-        start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
-        end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
-        end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
-        logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+            self.replan_t = best_path.t[-1]
+            best_path.compute_steering(self.sg.wheelbase)
+            ddelta = np.gradient(best_path.delta)
+            logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
 
-        self.replan_t = best_path.t[-1]
-        # self.replan_t = self.sampler.min_t
-        best_path.compute_steering(self.sg.wheelbase)
-        ddelta = np.gradient(best_path.delta)
-        logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
+            timestamps = list(best_path.t + current_time)
+            states = [
+                VehicleState(best_path.x[i], best_path.y[i], best_path.psi[i], best_path.vx[i], best_path.delta[i])
+                for i in range(best_path.T)
+            ]
+            states[0] = current_state
+            states[-1].psi = self.initial_psi  # assume heading aligned to lane at the end of trajectory
+            states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix  for delta bump
+            agent_traj = Trajectory(timestamps, states)
 
-        timestamps = list(best_path.t + current_time)
-        states = [
-            VehicleState(best_path.x[i], best_path.y[i], best_path.psi[i], best_path.vx[i], best_path.delta[i])
-            for i in range(best_path.T)
-        ]
-        states[0] = current_state
-        states[-1].psi = self.initial_psi  # assume heading aligned to lane at the end of trajectory
-        states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix  for delta bump
-
-        self.agent_traj = Trajectory(timestamps, states)
-        self.plans.append(self.agent_traj)
-        self.controller.set_reference(self.agent_traj)
+        self.plans.append(agent_traj)
+        self.controller.set_reference(agent_traj)
         self.last_replan_time = current_time
 
         return all_samples
@@ -199,8 +227,9 @@ class Pdm4arAgent(Agent):
             self.initial_psi = my_state.psi
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
-            all_samples = self.trigger_replan(sim_obs)
+            self.replan_count += 1
             logger.warning("Replanning at {}".format(current_time))
+            all_samples = self.trigger_replan(sim_obs)
 
             if self.visualize:
                 self.visualizer.plot_scenario(sim_obs)
@@ -232,36 +261,3 @@ class Pdm4arAgent(Agent):
         lights_cmd = LIGHTS_TURN_LEFT if cross > 0 else LIGHTS_TURN_RIGHT
 
         return VehicleCommands(acc=cmd_acc, ddelta=cmd_ddelta, lights=lights_cmd)
-
-    def check_paths(self, fplist) -> tuple[int, float]:
-
-        MAX_SPEED = 25  # maximum speed [m/s]
-        MIN_SPEED = 5
-        MAX_ACCEL = self.sp.acc_limits[1]  # maximum acceleration [m/ss]
-        MAX_CURVATURE = np.tan(self.sp.delta_max) / self.sg.length  # maximum curvature [1/m]
-        # MAX_CURVATURE = 1
-
-        feasibles = []
-        for i in range(len(fplist)):
-            _, _, _, _, curv = self.spline_ref.to_cartesian(fplist[i])
-
-            if any([v > MAX_SPEED for v in fplist[i].s_d]):  # Max speed check
-                continue
-            # if any([v < MIN_SPEED for v in fplist[i].s_d]):
-            # continue
-            elif any([abs(a) > MAX_ACCEL for a in fplist[i].s_dd]):  # Max accel check
-                continue
-            elif any([abs(c) > MAX_CURVATURE for c in curv]):  # Max curvature check
-                continue
-
-            feasibles.append(i)
-
-        bestpath = 0
-        mincost = np.inf
-        # all_samples = [fplist[i] for i in feasibles]
-        for i in feasibles:
-            if mincost >= fplist[i].cf:
-                mincost = fplist[i].cf
-                bestpath = i
-
-        return bestpath, mincost

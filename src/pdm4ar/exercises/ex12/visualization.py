@@ -41,7 +41,7 @@ class Visualizer:
         self.missions[agent_name] = goal
         self.colors[agent_name] = model.color
 
-    def save_fig(self, savepath="../../out/12/scene.png"):
+    def save_fig(self, savepath="/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/scene.png"):
         self.fig.savefig(savepath, bbox_inches="tight")
 
     def plot_trajectories(
@@ -153,4 +153,4 @@ class Visualizer:
             states = [VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)]
             all_trajectories.append(Trajectory(timestamps, states))
         self.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories], alpha=0.2)
-        self.save_fig("../../out/12/samples" + str(num_plan) + ".png")
+        self.save_fig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/samples" + str(num_plan) + ".png")
