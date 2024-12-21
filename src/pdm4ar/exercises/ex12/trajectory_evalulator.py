@@ -29,13 +29,15 @@ class KinematicsFilter:
     kappadot_allowed: float
     kappa_allowed: float
     __trajectory: Sample
+    reference: np.ndarray
 
-    def __init__(self, sp, sg) -> None:
+    def __init__(self, sp, sg, reference) -> None:
         self.sp = sp
         self.sg = sg
         self.kappa_allowed = np.tan(self.sp.delta_max) / self.sg.wheelbase
         self.min_vel = 4.0
         self.max_vel = 25.0
+        self.reference = reference
         # raise NotImplementedError()
 
     @property
@@ -50,7 +52,7 @@ class KinematicsFilter:
             and self.yaw_filter()
             and self.delta_filter()
             # and self.velocity_filter()
-            # and self.goal_filter()
+            and self.goal_filter()
         )
 
     def acceleration_filter(self):
@@ -97,10 +99,13 @@ class KinematicsFilter:
         return True
 
     def goal_filter(self):
-        d_start = self.__trajectory.d[0]
-        d_end = self.__trajectory.d[-1]
+        start_pt = np.stack([self.__trajectory.x[0], self.__trajectory.y[0]])
+        end_pt = np.stack([self.__trajectory.x[-1], self.__trajectory.y[-1]])
+        start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
+        end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
+
         # print(d_start, d_end)
-        if np.isclose(d_start, 0, atol=0.1) and not np.isclose(d_end, d_start, atol=0.5, rtol=0):
+        if start_ref_dist < 1.0 and not end_ref_dist < 1.0:
             # do not deviate from the reference once you reach it
             return False
         return True
@@ -113,6 +118,8 @@ class CollisionFilter:
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
         self.visualize = visualize
+        self.obs_kin = {}
+        self.dt = 0.1
 
     def check(self, trajectory: Sample, sim_obs):
         self.__trajectory = trajectory
@@ -123,7 +130,9 @@ class CollisionFilter:
             self.axes.autoscale()
         for player in sim_obs.players:
             if player != self.name:
-                collides = self.collision_filter(sim_obs.players[player].state, sim_obs.players[player].occupancy)
+                collides = self.collision_filter(
+                    player, sim_obs.players[player].state, sim_obs.players[player].occupancy
+                )
                 if collides:
                     break
         if self.visualize:
@@ -155,9 +164,28 @@ class CollisionFilter:
         ]
         return Polygon(box_corners)
 
-    def collision_filter(self, obs_state, obs_box):
+    def update_obs_acc(self, sim_obs):
+        for player in sim_obs.players:
+            if player != self.name:
+                if player not in self.obs_kin:
+                    self.obs_kin[player] = {"acc": 0, "prev_vx": 0}
+                else:
+                    curr_vx = sim_obs.players[player].state.vx
+                    self.obs_kin[player]["acc"] = (
+                        0.5 * self.obs_kin[player]["acc"] + 0.5 * (curr_vx - self.obs_kin[player]["prev_vx"]) / self.dt
+                    )
+                    self.obs_kin[player]["prev_vx"] = curr_vx
+
+    def collision_filter(self, obs_name, obs_state, obs_box):
         for i in range(self.__trajectory.T):
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
+
+            obs_head = np.array([np.cos(obs_state.psi), np.sin(obs_state.psi)])
+            obs_vec = np.array([pt_x - obs_state.x, pt_y - obs_state.y])
+            obs_dot = np.dot(obs_vec, obs_head)
+            obs_vel = 0 if obs_dot > 0 else obs_state.vx
+            obs_acc = 0 if obs_dot > 0 else self.obs_kin[obs_name]["acc"]
+
             self_box = self.get_box(pt_x, pt_y, pt_psi)
 
             if self.visualize:
@@ -168,8 +196,12 @@ class CollisionFilter:
             # for j in range(max(0, i - 1), min(self.__trajectory.T, i + 1)):
             j = i
             obx, oby = obs_box.exterior.xy
-            obs_x = np.array(obx) + (j * self.__trajectory.dt) * obs_state.vx * np.cos(obs_state.psi)
-            obs_y = np.array(oby) + (j * self.__trajectory.dt) * obs_state.vx * np.sin(obs_state.psi)
+            obs_x = np.array(obx) + (j * self.__trajectory.dt) * (
+                obs_vel + 0.5 * (j * self.__trajectory.dt) * obs_acc
+            ) * np.cos(obs_state.psi)
+            obs_y = np.array(oby) + (j * self.__trajectory.dt) * (
+                obs_vel + 0.5 * (j * self.__trajectory.dt) * obs_acc
+            ) * np.sin(obs_state.psi)
 
             obs_box_t = Polygon(zip(obs_x, obs_y))
             # dist = np.linalg.norm(np.array([pt_x - obs_x, pt_y - obs_y]), 2)
@@ -177,13 +209,15 @@ class CollisionFilter:
                 return True
 
             if self.visualize:
-                self.axes.plot(obs_x, obs_y, color="royalblue", alpha=0.1)
+                self.axes.plot(obs_x, obs_y, color="royalblue" if obs_dot <= 0 else "purple", alpha=0.4)
                 self.axes.fill(
                     obs_x,
                     obs_y,
                     color=plt.get_cmap("viridis")(j / self.__trajectory.T),
                     alpha=j / self.__trajectory.T * 0.1,
                 )
+                # self.axes.arrow(obs_state.x, obs_state.y, obs_vec[0], obs_vec[1], width=0.1)
+                # self.axes.arrow(obs_state.x, obs_state.y, obs_head[0], obs_head[1], width=0.1)
 
         return False
 
@@ -347,12 +381,12 @@ class Evaluator:
         sg: VehicleGeometry,
         visualize: bool,
     ) -> None:
-        self.kinematics_filter = KinematicsFilter(sp, sg)
-        self.collision_filter = CollisionFilter(init_obs, visualize)
         ref_line = np.column_stack((spline_ref.x, spline_ref.y))
+        self.kinematics_filter = KinematicsFilter(sp, sg, ref_line[::100])
+        self.collision_filter = CollisionFilter(init_obs, visualize)
 
         # acc, obs, ref, jerk, vel
-        self.fn_weights = [0.1, 1.0, 2.0, 0.005, 0.002]
+        self.fn_weights = [0.1, 1.0, 2.5, 0.005, 0.002]
 
         self.trajectory_cost = Cost(init_obs, ref_line, self.fn_weights)
         self.spline_ref = spline_ref

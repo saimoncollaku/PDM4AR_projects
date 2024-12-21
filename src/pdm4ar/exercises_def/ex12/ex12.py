@@ -25,14 +25,14 @@ def ex12_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[PlayerMetrics
     sim = Simulator()
     sim.run(sim_context)
     # visualisation
-    report = _ex12_vis(sim_context=sim_context)
+    # report = _ex12_vis(sim_context=sim_context)
     # compute metrics
     player_metrics = ex12_metrics(sim_context)
     # report evaluation
     score: float = player_metrics.reduce_to_score()
     score_str = f"{score:.2f}\n" + str(player_metrics)
     r.text("Evaluation: ", text=pprint.pformat(player_metrics))
-    r.add_child(report)
+    # r.add_child(report)
     if player_metrics.collided:
         collision_report = get_collision_reports(sim_context, skip_collision_viz=True)
         r.add_child(collision_report)
@@ -85,8 +85,8 @@ def load_config_ex12(file_path: Path) -> Mapping:
 def get_exercise12():
     config_dir = Path(__file__).parent
     scenarios_dir = str(config_dir)
-    # config_list = ["config_1.yaml", "config_2.yaml", "config_3.yaml"]
-    config_list = ["config_custom.yaml"]
+    config_list = ["config_3.yaml"]
+    # config_list = ["config_custom.yaml"]
     test_values: List[SimContext] = []
     for config_name in config_list:
         config_dict = load_config_ex12(config_dir / config_name)

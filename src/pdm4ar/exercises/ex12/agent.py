@@ -191,6 +191,7 @@ class Pdm4arAgent(Agent):
         self.all_states.append(my_state)
 
         my_traj = Trajectory(timestamps=self.all_timesteps, values=self.all_states)
+        self.evaluator.collision_filter.update_obs_acc(sim_obs)
 
         if np.isclose(current_time, 0):
             self.create_sampler(my_state)
