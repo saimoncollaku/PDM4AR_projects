@@ -1,0 +1,245 @@
+commit a95f4a93fa491ad3220dd54c4f2877ece87f632c
+Author: ba-13 <b.a.13.official@gmail.com>
+Date:   Sat Dec 21 19:36:50 2024 +0000
+
+    Correct initial state in sampler and emergency sample included
+
+diff --git a/src/pdm4ar/exercises/ex12/agent.py b/src/pdm4ar/exercises/ex12/agent.py
+index e267387..87c0fa1 100644
+--- a/src/pdm4ar/exercises/ex12/agent.py
++++ b/src/pdm4ar/exercises/ex12/agent.py
+@@ -124,24 +124,28 @@ class Pdm4arAgent(Agent):
+     def reinitialize_sampler(self, current_state: VehicleState):
+         current_cart = np.column_stack((current_state.x, current_state.y))
+         current_frenet = self.spline_ref.to_frenet(current_cart)
+-        c_d = current_frenet[0][1]
++        d0 = current_frenet[0][1]
+         s0 = current_frenet[0][0]
+-        self.sampler.assign_init_pos(s0, c_d, current_state.vx)
++        sdot = current_state.vx * np.cos(current_state.psi - self.initial_psi)
++        ddot = current_state.vx * np.sin(current_state.psi - self.initial_psi)
++        self.sampler.assign_init_pos(s0, d0, sdot, ddot)
+ 
+     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
+         dt = self.sampler.dt
+ 
+-        ux = init_state.vx * np.cos(init_state.psi)
+-        uy = init_state.vx * np.sin(init_state.psi)
++        ux = init_state.vx * np.cos(self.initial_psi)
++        uy = init_state.vx * np.sin(self.initial_psi)
+         max_deceleration = self.sp.acc_limits[0]
+-        ax = max_deceleration * np.cos(init_state.psi)
+-        ay = max_deceleration * np.sin(init_state.psi)
++        ax = max_deceleration * np.cos(self.initial_psi)
++        ay = max_deceleration * np.sin(self.initial_psi)
+         states = []
+         for step in range(time_steps):
+             t = dt * step
+-            x, y = ux * t + 0.5 * ax * (t) ** 2, uy * t + 0.5 * ay * (t) ** 2
+-            vx = init_state.vx + max_deceleration * t
+-            state = VehicleState(x=x, y=y, psi=init_state.psi, vx=vx, delta=0)
++            v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
++            vx = v * np.cos(self.initial_psi)
++            vy = v * np.sin(self.initial_psi)
++            x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
++            state = VehicleState(x=x, y=y, psi=self.initial_psi, vx=vx, delta=0)
+             states.append(state)
+         timesteps = np.linspace(current_time, current_time + time_steps * dt, time_steps).tolist()
+         return Trajectory(timesteps, states)
+@@ -165,7 +169,8 @@ class Pdm4arAgent(Agent):
+                 best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free
+             )
+         )
+-        if not (best_path.kinematics_feasible and best_path.collision_free) or self.replan_count % 2 == 0:
++        logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")
++        if not (best_path.kinematics_feasible and best_path.collision_free):
+             logger.warning("Entering emergency trajectory")
+             timesteps = 10
+             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
+diff --git a/src/pdm4ar/exercises/ex12/controller.py b/src/pdm4ar/exercises/ex12/controller.py
+index 9538c62..2c81bc6 100644
+--- a/src/pdm4ar/exercises/ex12/controller.py
++++ b/src/pdm4ar/exercises/ex12/controller.py
+@@ -80,7 +80,7 @@ class MPController:
+         self.axes[1].plot(self.target_traj.timestamps[self.curr_idx], target_states[self.curr_idx][1], marker="x")
+         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
+         self.fig.savefig(
+-            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12controller_perf"
++            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
+             + str(round(float(t), 2))
+             + ".png"
+         )
+@@ -193,7 +193,7 @@ class BasicController:
+         self.axes[0].autoscale()
+         self.axes[1].autoscale()
+         self.fig.savefig(
+-            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12controller_perf"
++            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
+             + str(round(float(t), 2))
+             + ".png"
+         )
+diff --git a/src/pdm4ar/exercises/ex12/sampler/frenet_sampler.py b/src/pdm4ar/exercises/ex12/sampler/frenet_sampler.py
+index e23d70f..9857725 100644
+--- a/src/pdm4ar/exercises/ex12/sampler/frenet_sampler.py
++++ b/src/pdm4ar/exercises/ex12/sampler/frenet_sampler.py
+@@ -30,6 +30,7 @@ class Sample:
+ 
+     t: np.ndarray
+     kinematics_feasible: bool = False
++    kinematics_feasible_dict: dict[str, bool]
+     collision_free: bool = False
+     cost: dict
+ 
+@@ -122,10 +123,10 @@ class FrenetSampler:
+         self.last_samples = []
+         self.last_best = []
+ 
+-        self.c_speed = starting_speed
+-        self.c_d = starting_d
+-        self.c_d_d = starting_dd
+-        self.c_d_dd = starting_ddd
++        self.sdot = starting_speed
++        self.d0 = starting_d
++        self.ddot = starting_dd
++        self.ddotdot = starting_ddd
+         self.s0 = starting_s
+ 
+         self.min_v = min_speed
+@@ -136,7 +137,6 @@ class FrenetSampler:
+         self.dt = 0.1
+         self.max_t = 2.6
+         self.min_t = 2.0
+-        
+ 
+     # TODO, its possible that we need to make another path maker for low speed
+     def get_paths_merge(self) -> list[Sample]:
+@@ -149,7 +149,7 @@ class FrenetSampler:
+             for ti in np.arange(self.min_t, self.max_t, self.dt):
+                 fp = Sample()
+ 
+-                lat_qp = Quintic(self.c_d, self.c_d_d, self.c_d_dd, di, 0.0, 0.0, ti)
++                lat_qp = Quintic(self.d0, self.ddot, self.ddotdot, di, 0.0, 0.0, ti)
+ 
+                 fp.dt = self.dt
+                 fp.t = np.arange(0.0, ti, self.dt)
+@@ -161,7 +161,7 @@ class FrenetSampler:
+                 # Loongitudinal sampling
+                 for vi in np.arange(self.min_v, self.max_v, self.v_res):
+                     tfp = copy.deepcopy(fp)
+-                    lon_qp = Quartic(self.s0, self.c_speed, 0.0, vi, 0.0, ti)
++                    lon_qp = Quartic(self.s0, self.sdot, 0.0, vi, 0.0, ti)
+ 
+                     tfp.s = [lon_qp.calc_point(t) for t in fp.t]
+                     tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
+@@ -189,10 +189,12 @@ class FrenetSampler:
+         i = int(replan_time / self.dt) - 1
+ 
+         fp = self.last_samples[index]
+-        self.c_d_d = fp.d_d[i]
+-        self.c_d_dd = fp.d_dd[i]
++        self.ddot = fp.d_d[i]
++        self.ddotdot = fp.d_dd[i]
+ 
+-    def assign_init_pos(self, s0, c_d, c_speed) -> None:
+-        self.c_speed = c_speed
+-        self.c_d = c_d
++    def assign_init_pos(self, s0, d0, sdot, ddot) -> None:
++        # self.c_acceleration = c_acc
++        self.sdot = sdot
++        self.d0 = d0
+         self.s0 = s0
++        self.ddot = ddot
+diff --git a/src/pdm4ar/exercises/ex12/trajectory_evalulator.py b/src/pdm4ar/exercises/ex12/trajectory_evalulator.py
+index da65509..fd500fd 100644
+--- a/src/pdm4ar/exercises/ex12/trajectory_evalulator.py
++++ b/src/pdm4ar/exercises/ex12/trajectory_evalulator.py
+@@ -46,14 +46,14 @@ class KinematicsFilter:
+ 
+     def check(self, trajectory: Sample):
+         self.__trajectory = trajectory
+-        return (
+-            self.acceleration_filter()
+-            and self.curvature_filter()
+-            and self.yaw_filter()
+-            and self.delta_filter()
+-            # and self.velocity_filter()
+-            and self.goal_filter()
+-        )
++        return {
++            "acceleration": self.acceleration_filter(),
++            "curvature": self.curvature_filter(),
++            "yaw": self.yaw_filter(),
++            "delta": self.delta_filter(),
++            # "velocity": self.velocity_filter(),
++            "goal": self.goal_filter(),
++        }
+ 
+     def acceleration_filter(self):
+         """
+@@ -136,7 +136,7 @@ class CollisionFilter:
+                 if collides:
+                     break
+         if self.visualize:
+-            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12collision_check.png")
++            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/collision_check.png")
+             plt.close(self.fig)
+         return collides
+ 
+@@ -231,8 +231,9 @@ class Cost:
+     weights: dict
+     cost_functions: list
+ 
+-    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: np.ndarray) -> None:
++    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: list) -> None:
+         self.name = init_obs.my_name
++        assert isinstance(init_obs.model_geometry, VehicleGeometry)
+         self.sg = init_obs.model_geometry
+         self.__reference = ref_line[::100]
+         self.weights = {
+@@ -352,6 +353,7 @@ class Cost:
+             for player in self.__observations.players:
+                 if player != self.name:
+                     obs_box = self.__observations.players[player].occupancy
++                    assert obs_box is not None
+                     obs_state = self.__observations.players[player].state
+                     obx, oby = obs_box.exterior.xy
+ 
+@@ -422,7 +424,7 @@ class Evaluator:
+         all_samples[best_path_index].collision_free = True
+ 
+         if self.visualize:
+-            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12traj_cost.png")
++            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/traj_cost.png")
+             plt.close(self.fig)
+             self.fig, self.axes = plt.subplots()
+             self.trajectory_cost.set_vis(self.fig, self.axes)
+@@ -438,7 +440,9 @@ class Evaluator:
+             self.spline_ref.to_cartesian(trajectory)
+         trajectory.compute_derivatives()
+ 
+-        kinematics_passed = self.kinematics_filter.check(trajectory)
++        kinematics_passed_dict = self.kinematics_filter.check(trajectory)
++        kinematics_passed = all(kinematics_passed_dict.values())
++        trajectory.kinematics_feasible_dict = kinematics_passed_dict
+         if not kinematics_passed:
+             return {"kinematics_cost": np.inf}
+         trajectory.kinematics_feasible = True
+diff --git a/src/pdm4ar/exercises/ex12/visualization.py b/src/pdm4ar/exercises/ex12/visualization.py
+index a756ba4..0c58c95 100644
+--- a/src/pdm4ar/exercises/ex12/visualization.py
++++ b/src/pdm4ar/exercises/ex12/visualization.py
+@@ -41,7 +41,7 @@ class Visualizer:
+         self.missions[agent_name] = goal
+         self.colors[agent_name] = model.color
+ 
+-    def save_fig(self, savepath="/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12scene.png"):
++    def save_fig(self, savepath="/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/scene.png"):
+         self.fig.savefig(savepath, bbox_inches="tight")
+ 
+     def plot_trajectories(
+@@ -153,4 +153,4 @@ class Visualizer:
+             states = [VehicleState(path.x[i], path.y[i], path.psi[i], path.vx[i], path.delta[i]) for i in range(path.T)]
+             all_trajectories.append(Trajectory(timestamps, states))
+         self.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories], alpha=0.2)
+-        self.save_fig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12samples" + str(num_plan) + ".png")
++        self.save_fig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/samples" + str(num_plan) + ".png")

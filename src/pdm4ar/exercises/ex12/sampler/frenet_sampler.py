@@ -30,6 +30,7 @@ class Sample:
 
     t: np.ndarray
     kinematics_feasible: bool = False
+    kinematics_feasible_dict: dict[str, bool]
     collision_free: bool = False
     cost: dict
 
@@ -122,10 +123,10 @@ class FrenetSampler:
         self.last_samples = []
         self.last_best = []
 
-        self.c_speed = starting_speed
-        self.c_d = starting_d
-        self.c_d_d = starting_dd
-        self.c_d_dd = starting_ddd
+        self.sdot = starting_speed
+        self.d0 = starting_d
+        self.ddot = starting_dd
+        self.ddotdot = starting_ddd
         self.s0 = starting_s
 
         self.min_v = min_speed
@@ -136,7 +137,6 @@ class FrenetSampler:
         self.dt = 0.1
         self.max_t = 2.6
         self.min_t = 2.0
-        
 
     # TODO, its possible that we need to make another path maker for low speed
     def get_paths_merge(self) -> list[Sample]:
@@ -149,7 +149,7 @@ class FrenetSampler:
             for ti in np.arange(self.min_t, self.max_t, self.dt):
                 fp = Sample()
 
-                lat_qp = Quintic(self.c_d, self.c_d_d, self.c_d_dd, di, 0.0, 0.0, ti)
+                lat_qp = Quintic(self.d0, self.ddot, self.ddotdot, di, 0.0, 0.0, ti)
 
                 fp.dt = self.dt
                 fp.t = np.arange(0.0, ti, self.dt)
@@ -161,7 +161,7 @@ class FrenetSampler:
                 # Loongitudinal sampling
                 for vi in np.arange(self.min_v, self.max_v, self.v_res):
                     tfp = copy.deepcopy(fp)
-                    lon_qp = Quartic(self.s0, self.c_speed, 0.0, vi, 0.0, ti)
+                    lon_qp = Quartic(self.s0, self.sdot, 0.0, vi, 0.0, ti)
 
                     tfp.s = [lon_qp.calc_point(t) for t in fp.t]
                     tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
@@ -189,10 +189,11 @@ class FrenetSampler:
         i = int(replan_time / self.dt) - 1
 
         fp = self.last_samples[index]
-        self.c_d_d = fp.d_d[i]
-        self.c_d_dd = fp.d_dd[i]
+        self.ddot = fp.d_d[i]
+        self.ddotdot = fp.d_dd[i]
 
-    def assign_init_pos(self, s0, c_d, c_speed) -> None:
-        self.c_speed = c_speed
-        self.c_d = c_d
+    def assign_init_kinematics(self, s0, d0, sdot, ddot) -> None:
+        self.sdot = sdot
+        self.d0 = d0
         self.s0 = s0
+        self.ddot = ddot

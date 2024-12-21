@@ -124,24 +124,28 @@ class Pdm4arAgent(Agent):
     def reinitialize_sampler(self, current_state: VehicleState):
         current_cart = np.column_stack((current_state.x, current_state.y))
         current_frenet = self.spline_ref.to_frenet(current_cart)
-        c_d = current_frenet[0][1]
+        d0 = current_frenet[0][1]
         s0 = current_frenet[0][0]
-        self.sampler.assign_init_pos(s0, c_d, current_state.vx)
+        sdot = current_state.vx * np.cos(current_state.psi - self.initial_psi)
+        ddot = current_state.vx * np.sin(current_state.psi - self.initial_psi)
+        self.sampler.assign_init_kinematics(s0, d0, sdot, ddot)
 
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
         dt = self.sampler.dt
 
-        ux = init_state.vx * np.cos(init_state.psi)
-        uy = init_state.vx * np.sin(init_state.psi)
+        ux = init_state.vx * np.cos(self.initial_psi)
+        uy = init_state.vx * np.sin(self.initial_psi)
         max_deceleration = self.sp.acc_limits[0]
-        ax = max_deceleration * np.cos(init_state.psi)
-        ay = max_deceleration * np.sin(init_state.psi)
+        ax = max_deceleration * np.cos(self.initial_psi)
+        ay = max_deceleration * np.sin(self.initial_psi)
         states = []
         for step in range(time_steps):
             t = dt * step
-            x, y = ux * t + 0.5 * ax * (t) ** 2, uy * t + 0.5 * ay * (t) ** 2
-            vx = init_state.vx + max_deceleration * t
-            state = VehicleState(x=x, y=y, psi=init_state.psi, vx=vx, delta=0)
+            v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
+            vx = v * np.cos(self.initial_psi)
+            vy = v * np.sin(self.initial_psi)
+            x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
+            state = VehicleState(x=x, y=y, psi=self.initial_psi, vx=vx, delta=0)
             states.append(state)
         timesteps = np.linspace(current_time, current_time + time_steps * dt, time_steps).tolist()
         return Trajectory(timesteps, states)
@@ -165,7 +169,8 @@ class Pdm4arAgent(Agent):
                 best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free
             )
         )
-        if not (best_path.kinematics_feasible and best_path.collision_free) or self.replan_count % 2 == 0:
+        logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")
+        if not (best_path.kinematics_feasible and best_path.collision_free):
             logger.warning("Entering emergency trajectory")
             timesteps = 10
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)

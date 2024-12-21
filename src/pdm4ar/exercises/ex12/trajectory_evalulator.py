@@ -46,14 +46,14 @@ class KinematicsFilter:
 
     def check(self, trajectory: Sample):
         self.__trajectory = trajectory
-        return (
-            self.acceleration_filter()
-            and self.curvature_filter()
-            and self.yaw_filter()
-            and self.delta_filter()
-            # and self.velocity_filter()
-            and self.goal_filter()
-        )
+        return {
+            "acceleration": self.acceleration_filter(),
+            "curvature": self.curvature_filter(),
+            "yaw": self.yaw_filter(),
+            "delta": self.delta_filter(),
+            # "velocity": self.velocity_filter(),
+            "goal": self.goal_filter(),
+        }
 
     def acceleration_filter(self):
         """
@@ -232,8 +232,9 @@ class Cost:
     weights: dict
     cost_functions: list
 
-    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: np.ndarray) -> None:
+    def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: list) -> None:
         self.name = init_obs.my_name
+        assert isinstance(init_obs.model_geometry, VehicleGeometry)
         self.sg = init_obs.model_geometry
         self.__reference = ref_line[::100]
         self.weights = {
@@ -457,7 +458,9 @@ class Evaluator:
             self.spline_ref.to_cartesian(trajectory)
         trajectory.compute_derivatives()
 
-        kinematics_passed = self.kinematics_filter.check(trajectory)
+        kinematics_passed_dict = self.kinematics_filter.check(trajectory)
+        kinematics_passed = all(kinematics_passed_dict.values())
+        trajectory.kinematics_feasible_dict = kinematics_passed_dict
         if not kinematics_passed:
             return {"kinematics_cost": np.inf}
         trajectory.kinematics_feasible = True
