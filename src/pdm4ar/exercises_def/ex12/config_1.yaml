@@ -2,6 +2,16 @@ task_level: 1
 
 testcases:
   -
+    scenario: "USA_US101-10_3_T-1"
+    max_sim_time: 10.0
+    ego:
+      original_name: P26
+      goal_lane_id: 40
+    others:
+      names: [P8, P9, P18, P22]
+    description: "scenario2"
+
+  -
     scenario: "ZAM_Zip-1_64_T-1"
     max_sim_time: 10.0
     ego:
@@ -16,7 +26,7 @@ testcases:
     max_sim_time: 10.0
     ego:
       original_name: P1
-      goal_lane_id: 24
+      goal_lane_id: 25
     others:
       names: [P0, P2]
     description: "scenario6"
@@ -26,20 +36,10 @@ testcases:
     max_sim_time: 10.0
     ego:
       original_name: P2
-      goal_lane_id: 24
+      goal_lane_id: 25
     others:
       names: [P0, P1]
     description: "scenario7"
-  
-  -
-    scenario: "USA_US101-10_3_T-1"
-    max_sim_time: 10.0
-    ego:
-      original_name: P26
-      goal_lane_id: 40
-    others:
-      names: [P8, P9, P18, P22]
-    description: "scenario2"
 
   -
     scenario: "USA_US101-10_3_T-1"

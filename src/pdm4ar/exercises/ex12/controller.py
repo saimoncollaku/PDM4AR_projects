@@ -156,6 +156,9 @@ class BasicController:
             self.fig, self.axes = plt.subplots(2, 1)
 
     def plot_controller_perf(self, t):
+        if self.target_traj is None:
+            return
+
         target_states = [[state.vx, state.delta] for state in self.target_traj.values]
 
         self.axes[0].plot(self.target_traj.timestamps, [v[0] for v in target_states], c="r")
@@ -288,6 +291,8 @@ class BasicController:
 
     def get_controls(self, curr_state, t):
         self.curr_states.append([curr_state.vx, curr_state.delta])
+        if t <= 0.2:
+            return 0, 0
         acc = self.speed_control(curr_state.vx)
         ddelta = self.steer_control(curr_state)
         # ddelta = 0

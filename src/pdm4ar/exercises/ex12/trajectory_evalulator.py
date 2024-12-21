@@ -86,7 +86,7 @@ class KinematicsFilter:
     def delta_filter(self):
         self.__trajectory.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(self.__trajectory.delta)
-        if np.max(np.abs(ddelta)) > 2 * self.sp.ddelta_max * self.__trajectory.dt:
+        if np.max(np.abs(ddelta)) > 4 * self.sp.ddelta_max * self.__trajectory.dt:
             return False
         return True
 

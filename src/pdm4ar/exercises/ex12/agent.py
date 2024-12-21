@@ -230,7 +230,7 @@ class Pdm4arAgent(Agent):
                     self.initial_psi = sim_obs.players[player].state.psi
                     break
 
-        if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
+        if np.isclose(current_time, 0.2) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
             self.replan_count += 1
             logger.warning("Replanning at {}".format(current_time))
             all_samples = self.trigger_replan(sim_obs)
