@@ -442,12 +442,10 @@ class Evaluator:
         for player in sim_obs.players:
             if player != self.name:
                 if player not in self.obs_kin:
-                    self.obs_kin[player] = {"acc": 0, "prev_vx": 0}
+                    self.obs_kin[player] = {"acc": 0, "prev_vx": sim_obs.players[player].state.vx}
                 else:
                     curr_vx = sim_obs.players[player].state.vx
-                    self.obs_kin[player]["acc"] = (
-                        0.5 * self.obs_kin[player]["acc"] + 0.5 * (curr_vx - self.obs_kin[player]["prev_vx"]) / self.dt
-                    )
+                    self.obs_kin[player]["acc"] = (curr_vx - self.obs_kin[player]["prev_vx"]) / self.dt
                     self.obs_kin[player]["prev_vx"] = curr_vx
 
     def get_costs(self, trajectory: Sample, sim_obs: SimObservations) -> dict:
