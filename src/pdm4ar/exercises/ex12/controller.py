@@ -79,11 +79,7 @@ class MPController:
         )
         self.axes[1].plot(self.target_traj.timestamps[self.curr_idx], target_states[self.curr_idx][1], marker="x")
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
-        self.fig.savefig(
-            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
-            + str(round(float(t), 2))
-            + ".png"
-        )
+        self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
 
     def set_reference(self, target):
         self.target_traj = target
@@ -192,11 +188,7 @@ class BasicController:
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
         self.axes[0].autoscale()
         self.axes[1].autoscale()
-        self.fig.savefig(
-            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
-            + str(round(float(t), 2))
-            + ".png"
-        )
+        self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
 
     def clear_viz(self):
         plt.close(self.fig)

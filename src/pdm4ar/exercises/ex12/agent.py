@@ -145,7 +145,7 @@ class Pdm4arAgent(Agent):
             vx = v * np.cos(self.initial_psi)
             vy = v * np.sin(self.initial_psi)
             x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
-            state = VehicleState(x=x, y=y, psi=self.initial_psi, vx=vx, delta=0)
+            state = VehicleState(x=x, y=y, psi=self.initial_psi, vx=v, delta=0)
             states.append(state)
         timesteps = np.linspace(current_time, current_time + time_steps * dt, time_steps).tolist()
         return Trajectory(timesteps, states)
@@ -172,7 +172,7 @@ class Pdm4arAgent(Agent):
         logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")
         if not (best_path.kinematics_feasible and best_path.collision_free):
             logger.warning("Entering emergency trajectory")
-            timesteps = 10
+            timesteps = 5
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_t = timesteps * self.sampler.dt
         else:
@@ -183,6 +183,7 @@ class Pdm4arAgent(Agent):
             logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
             self.replan_t = best_path.t[-1]
+            # self.replan_t = 1.0
             best_path.compute_steering(self.sg.wheelbase)
             ddelta = np.gradient(best_path.delta)
             logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
@@ -224,7 +225,10 @@ class Pdm4arAgent(Agent):
 
         if np.isclose(current_time, 0):
             self.create_sampler(my_state)
-            self.initial_psi = my_state.psi
+            for player in sim_obs.players:
+                if player != self.name:
+                    self.initial_psi = sim_obs.players[player].state.psi
+                    break
 
         if np.isclose(current_time, 0) or np.isclose(float(current_time - self.last_replan_time), self.replan_t):
             self.replan_count += 1

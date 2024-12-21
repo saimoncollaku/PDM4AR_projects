@@ -119,8 +119,8 @@ class CollisionFilter:
         self.sg = init_obs.model_geometry
         self.visualize = visualize
         self.dt = 0.1
-        self.dist_parallel = (self.sg.lr + self.sg.lf) / 2.0
-        self.dist_perp = self.sg.width
+        # self.dist_parallel = (self.sg.lr + self.sg.lf) / 2 + 3.5
+        # self.dist_perp = self.sg.width / 2 + 3.5
 
     def check(self, trajectory: Sample, sim_obs, obs_acc):
         self.__trajectory = trajectory
@@ -137,7 +137,7 @@ class CollisionFilter:
                 if collides:
                     break
         if self.visualize:
-            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/collision_check.png")
+            self.fig.savefig("../../out/12/collision_check.png")
             plt.close(self.fig)
         return collides
 
@@ -167,17 +167,18 @@ class CollisionFilter:
 
     def collision_filter(self, obs_name, obs_state, obs_box, obs_acc):
         obx, oby = obs_box.exterior.xy
+        # ob_h
         obs_head = np.array([np.cos(obs_state.psi), np.sin(obs_state.psi)])
         obs_perp = np.array([-np.sin(obs_state.psi), np.cos(obs_state.psi)])
-        obs_x, obs_y = obs_state.x, obs_state.y
+        # print(obx, oby)
+
+        obs_vec = np.array([self.__trajectory.x[0] - obs_state.x, self.__trajectory.y[0] - obs_state.y])
+        obs_dot = np.dot(obs_vec, obs_head)
+        obs_vel = 0 if obs_dot > 0 else obs_state.vx
+        obs_acc = 0 if obs_dot > 0 else obs_acc
 
         for i in range(self.__trajectory.T):
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
-
-            obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
-            obs_dot = np.dot(obs_vec, obs_head)
-            obs_vel = 0 if obs_dot > 0 else obs_state.vx
-            obs_acc = 0 if obs_dot > 0 else obs_acc
 
             self_box = self.get_box(pt_x, pt_y, pt_psi)
 
@@ -188,31 +189,37 @@ class CollisionFilter:
 
             # for j in range(max(0, i - 1), min(self.__trajectory.T, i + 1)):
             # j = i
-            obs_x = obs_x + self.__trajectory.dt * (obs_vel + 0.5 * self.__trajectory.dt * obs_acc) * np.cos(
-                obs_state.psi
-            )
-            obs_y = obs_y + self.__trajectory.dt * (obs_vel + 0.5 * self.__trajectory.dt * obs_acc) * np.sin(
-                obs_state.psi
-            )
+            obs_x = np.array(obx) + i * self.__trajectory.dt * (
+                obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+            ) * np.cos(obs_state.psi)
+            obs_y = np.array(oby) + i * self.__trajectory.dt * (
+                obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+            ) * np.sin(obs_state.psi)
+            # obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
+            # obs_dot = np.dot(obs_vec, obs_head)
 
-            # obs_box_t = Polygon(zip(obs_x, obs_y))
-            dist_parallel = abs(obs_dot)
-            dist_perp = abs(np.dot(obs_vec, obs_perp))
+            obs_box_t = Polygon(zip(obs_x, obs_y))
+            # dist_parallel = abs(obs_dot)
+            # dist_perp = abs(np.dot(obs_vec, obs_perp))
             # dist = np.linalg.norm(dist_vec, 2)
-            if (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 <= 1:
-                # if self_box.intersects(obs_box_t):
+            # if (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 <= 1:
+            if self_box.intersects(obs_box_t):
                 return True
 
             if self.visualize:
                 self.axes.plot(
-                    np.array(obx) + obs_x - obs_state.x,
-                    np.array(oby) + obs_y - obs_state.y,
-                    color="royalblue" if obs_dot <= 0 else "purple",
+                    # np.array(obx) + obs_x - obs_state.x,
+                    # np.array(oby) + obs_y - obs_state.y,
+                    obs_x,
+                    obs_y,
+                    color="royalblue" if obs_vel > 0 else "purple",
                     alpha=0.4,
                 )
                 self.axes.fill(
-                    np.array(obx) + obs_x - obs_state.x,
-                    np.array(oby) + obs_y - obs_state.y,
+                    # np.array(obx) + obs_x - obs_state.x,
+                    # np.array(oby) + obs_y - obs_state.y,
+                    obs_x,
+                    obs_y,
                     color=plt.get_cmap("viridis")(i / self.__trajectory.T),
                     alpha=i / self.__trajectory.T * 0.1,
                 )
@@ -246,8 +253,8 @@ class Cost:
             self.penalize_velocity: fn_weights[4],  # 1e2 order
         }
         self.cost_functions = list(self.weights.keys())
-        self.dist_parallel = (self.sg.lr + self.sg.lf) / 2.0 + 0.1
-        self.dist_perp = self.sg.width + 0.1
+        # self.dist_parallel = (self.sg.lr + self.sg.lf) / 2 + 3.5
+        # self.dist_perp = self.sg.width / 2 + 3.5
 
     def get_box(self, x, y, psi, inflate=0.0):
         # can only assume all cars have same geometry
@@ -341,35 +348,37 @@ class Cost:
                 obx, oby = obs_box.exterior.xy
                 obs_head = np.array([np.cos(obs_state.psi), np.sin(obs_state.psi)])
                 obs_perp = np.array([-np.sin(obs_state.psi), np.cos(obs_state.psi)])
-                obs_x, obs_y = obs_state.x, obs_state.y
+
+                obs_vec = np.array([self.__trajectory.x[0] - obs_state.x, self.__trajectory.y[0] - obs_state.y])
+                obs_dot = np.dot(obs_vec, obs_head)
+                obs_vel = 0 if obs_dot > 0 else obs_state.vx
+                obs_acc = 0 if obs_dot > 0 else self.__obs_acc[player]["acc"]
 
                 dist = [1e3]
                 for i in range(self.__trajectory.T):
                     pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
                     self_box = self.get_box(pt_x, pt_y, pt_psi)
 
-                    obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
-                    obs_dot = np.dot(obs_vec, obs_head)
-                    obs_vel = 0 if obs_dot > 0 else obs_state.vx
-                    obs_acc = 0 if obs_dot > 0 else self.__obs_acc[player]["acc"]
+                    obs_x = np.array(obx) + i * self.__trajectory.dt * (
+                        obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+                    ) * np.cos(obs_state.psi)
+                    obs_y = np.array(oby) + self.__trajectory.dt * (
+                        obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+                    ) * np.sin(obs_state.psi)
 
-                    obs_x = obs_x + self.__trajectory.dt * (obs_vel + 0.5 * self.__trajectory.dt * obs_acc) * np.cos(
-                        obs_state.psi
-                    )
-                    obs_y = obs_y + self.__trajectory.dt * (obs_vel + 0.5 * self.__trajectory.dt * obs_acc) * np.sin(
-                        obs_state.psi
-                    )
+                    # obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
+                    # obs_dot = np.dot(obs_vec, obs_head)
 
-                    dist_parallel = abs(obs_dot)
-                    dist_perp = abs(np.dot(obs_vec, obs_perp))
+                    # dist_parallel = abs(obs_dot)
+                    # dist_perp = abs(np.dot(obs_vec, obs_perp))
 
-                    # obs_box_t = Polygon(zip(obs_x, obs_y))
-                    # dist.append(self_box.distance(obs_box_t))
-                    ellip_dist = (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 - 1
-                    dist.append(ellip_dist)
+                    obs_box_t = Polygon(zip(obs_x, obs_y))
+                    dist.append(self_box.distance(obs_box_t))
+                    # ellip_dist = (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 - 1
+                    # dist.append(ellip_dist)
 
                 pen = min(dist)
-                cost += 1 / (pen**2)
+                cost += 1 / (pen**2) if pen > 0 else 1e3
 
         return cost
 
@@ -432,7 +441,7 @@ class Evaluator:
         all_samples[best_path_index].collision_free = True
 
         if self.visualize:
-            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/traj_cost.png")
+            self.fig.savefig("../../out/12/traj_cost.png")
             plt.close(self.fig)
             self.fig, self.axes = plt.subplots()
             self.trajectory_cost.set_vis(self.fig, self.axes)
