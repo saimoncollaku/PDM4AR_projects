@@ -79,7 +79,11 @@ class MPController:
         )
         self.axes[1].plot(self.target_traj.timestamps[self.curr_idx], target_states[self.curr_idx][1], marker="x")
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
-        self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
+        self.fig.savefig(
+            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
+            + str(round(float(t), 2))
+            + ".png"
+        )
 
     def set_reference(self, target):
         self.target_traj = target
@@ -167,6 +171,7 @@ class BasicController:
             [target_states[self.curr_idx][0], self.curr_states[-1][0]],
             marker="x",
         )
+        self.axes[0].set_title("vx")
         # self.axes[0].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_v, c="k")
 
         self.axes[1].plot(self.target_traj.timestamps, [v[1] for v in target_states], c="r")
@@ -178,6 +183,7 @@ class BasicController:
             [target_states[self.curr_idx][1], self.curr_states[-1][1]],
             marker="x",
         )
+        self.axes[1].set_title("delta")
         # if len(self.curr_states) > 2:
         #     print(
         #         max(np.gradient([state[1] for state in target_states])),
@@ -186,7 +192,11 @@ class BasicController:
         # self.axes[1].plot(self.target_traj.timestamps[: len(self.curr_states)], self.error_psi, c="k")
         self.axes[0].autoscale()
         self.axes[1].autoscale()
-        self.fig.savefig("../../out/12/controller_perf" + str(round(float(t), 2)) + ".png")
+        self.fig.savefig(
+            "/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/controller_perf"
+            + str(round(float(t), 2))
+            + ".png"
+        )
 
     def clear_viz(self):
         plt.close(self.fig)

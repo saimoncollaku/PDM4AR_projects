@@ -137,7 +137,7 @@ class CollisionFilter:
                 if collides:
                     break
         if self.visualize:
-            self.fig.savefig("../../out/12/collision_check.png")
+            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/collision_check.png")
             plt.close(self.fig)
         return collides
 
@@ -431,7 +431,7 @@ class Evaluator:
         all_samples[best_path_index].collision_free = True
 
         if self.visualize:
-            self.fig.savefig("../../out/12/traj_cost.png")
+            self.fig.savefig("/workspaces/student-group-pdm4ar-2024hs-ex12-nopteam/out/12/traj_cost.png")
             plt.close(self.fig)
             self.fig, self.axes = plt.subplots()
             self.trajectory_cost.set_vis(self.fig, self.axes)
