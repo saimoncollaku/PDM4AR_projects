@@ -108,7 +108,7 @@ class Pdm4arAgent(Agent):
         current_frenet = self.spline_ref.to_frenet(current_cart)
         road_l = self.road_distances[0]
         road_r = self.road_distances[1]
-        road_generic = self.road_distances[2] / 2
+        road_generic = self.road_distances[2]
         c_d = current_frenet[0][1]
         s0 = current_frenet[0][0]
         if c_d > 0:
@@ -154,6 +154,7 @@ class Pdm4arAgent(Agent):
         logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
         self.replan_t = best_path.t[-1]
+        # self.replan_t = self.sampler.min_t
         best_path.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(best_path.delta)
         logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
@@ -191,7 +192,7 @@ class Pdm4arAgent(Agent):
         self.all_states.append(my_state)
 
         my_traj = Trajectory(timestamps=self.all_timesteps, values=self.all_states)
-        self.evaluator.collision_filter.update_obs_acc(sim_obs)
+        self.evaluator.update_obs_acc(sim_obs)
 
         if np.isclose(current_time, 0):
             self.create_sampler(my_state)
