@@ -69,14 +69,14 @@ def obtain_complete_ref(goal: RefLaneGoal, lanelet_network: LaneletNetwork) -> t
         # Generate 5 evenly spaced points including start and end
         complete_path = np.linspace(start_point, end_point, 5).tolist()
 
-    idx = 5
-    straight_line_first, straight_line_last = complete_path[-idx], complete_path[-1]
-    # Assumption: This path is straight
-    vector_along_lanelet = straight_line_last - straight_line_first
-    length_difference = np.linalg.norm(vector_along_lanelet, ord=2)
-    distances = np.linspace(0, length_difference, idx)
-    extrapolated_points = [straight_line_first + distance * vector_along_lanelet for distance in distances]
-    complete_path.extend(extrapolated_points)
+    # idx = 5
+    # straight_line_first, straight_line_last = complete_path[-idx], complete_path[-1]
+    # # Assumption: This path is straight
+    # vector_along_lanelet = straight_line_last - straight_line_first
+    # length_difference = np.linalg.norm(vector_along_lanelet, ord=2)
+    # distances = np.linspace(0, length_difference, idx)
+    # extrapolated_points = [straight_line_first + distance * vector_along_lanelet for distance in distances]
+    # complete_path.extend(extrapolated_points)
 
     complete_path = np.array(complete_path)
 

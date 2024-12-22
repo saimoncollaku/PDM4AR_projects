@@ -2,13 +2,13 @@ task_level: 3
 
 testcases:
   -
-    scenario: "USA_US101-9_1_T-1"
+    scenario: "ZAM_Zip-1_64_T-1"
     max_sim_time: 10.0
     ego:
-      original_name: P18
-      goal_lane_id: 27
+      original_name: P2
+      goal_lane_id: 25
     others:
-      names: [P4, P10, P15, P19, P21]
-    description: "scenario1"
+      names: [P0, P1]
+    description: "scenario7"
 
 seed: 98
