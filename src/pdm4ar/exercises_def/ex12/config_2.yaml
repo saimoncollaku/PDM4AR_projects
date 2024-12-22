@@ -2,6 +2,16 @@ task_level: 2
 
 testcases:
   -
+    scenario: "ESP_Mad-1_10_I-1-1.cr"
+    max_sim_time: 15.0
+    ego:
+      original_name: P17
+      goal_lane_id: 8
+    others:
+      names: [P7, P10, P14, P13, P18, P19, P21]
+    description: "scenario8"
+    
+  -
     scenario: "USA_US101-9_1_T-1"
     max_sim_time: 10.0
     ego:
@@ -15,21 +25,21 @@ testcases:
     scenario: "USA_US101-9_1_T-1"
     max_sim_time: 10.0
     ego:
-      original_name: P18
-      goal_lane_id: 27
-    others:
-      names: [P4, P10, P15, P19, P21]
-    description: "scenario1"
-
-  -
-    scenario: "USA_US101-9_1_T-1"
-    max_sim_time: 10.0
-    ego:
       original_name: P10
       goal_lane_id: 27
     others:
       names: [P4, P19, P15, P18, P21]
     description: "scenario3"
+
+  -
+    scenario: "USA_US101-9_1_T-1"
+    max_sim_time: 10.0
+    ego:
+      original_name: P18
+      goal_lane_id: 27
+    others:
+      names: [P4, P10, P15, P19, P21]
+    description: "scenario1"
 
   -
     scenario: "USA_US101-9_1_T-1"
@@ -70,15 +80,5 @@ testcases:
     others:
       names: [P7, P13, P14, P17, P18, P19, P21]
     description: "scenario7"
-
-  -
-    scenario: "ESP_Mad-1_10_I-1-1.cr"
-    max_sim_time: 15.0
-    ego:
-      original_name: P17
-      goal_lane_id: 8
-    others:
-      names: [P7, P10, P14, P13, P18, P19, P21]
-    description: "scenario8"
 
 seed: 98

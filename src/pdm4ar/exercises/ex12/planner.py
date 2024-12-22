@@ -33,7 +33,9 @@ class Planner:
 
     my_name: PlayerName
 
+    controller: Controller
     evaluator: Evaluator
+    sampler: FrenetSampler
     cmd_acc: float
     cmd_ddelta: float
     road_distances: tuple[float, float, float]
@@ -93,11 +95,11 @@ class Planner:
         s0 = current_frenet[0][0]
         d0 = current_frenet[0][1]
         if d0 > 0:
-            road_l = abs(d0)
-            road_r = road_generic
+            road_l = road_generic * round(abs(d0) / road_generic)
+            road_r = 0
         else:
-            road_l = road_generic
-            road_r = abs(d0)
+            road_l = 0
+            road_r = road_generic * round(abs(d0) / road_generic)
 
         self.sampler = FrenetSampler(
             min_speed=self.agent_params.min_sample_speed,
@@ -183,8 +185,8 @@ class Planner:
             # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
             # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
-            self.replan_in_t = best_path.t[-1]
-            # self.replan_in_t = 1.0
+            # self.replan_in_t = best_path.t[-1]
+            self.replan_in_t = 1.0
             best_path.compute_steering(self.sg.wheelbase)
             # ddelta = np.gradient(best_path.delta)
             # logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))

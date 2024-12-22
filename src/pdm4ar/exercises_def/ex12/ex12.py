@@ -23,6 +23,9 @@ def ex12_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[PlayerMetrics
     r = Report("Final24-" + sim_context.description)
     # run simulation
     sim = Simulator()
+    print("\n============")
+    print(sim_context.description)
+    print("============")
     sim.run(sim_context)
     # visualisation
     # report = _ex12_vis(sim_context=sim_context)
@@ -31,9 +34,6 @@ def ex12_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[PlayerMetrics
     # report evaluation
     score: float = player_metrics.reduce_to_score()
     score_str = f"Score: {score:.2f}\n" + str(player_metrics)
-    print("\n============")
-    print(sim_context.description)
-    print("============")
     print(score_str)
     with open("results.txt", "a") as f:
         f.write("\n============\n")
@@ -94,7 +94,7 @@ def load_config_ex12(file_path: Path) -> Mapping:
 def get_exercise12():
     config_dir = Path(__file__).parent
     scenarios_dir = str(config_dir)
-    config_list = ["config_1.yaml", "config_2.yaml", "config_3.yaml"]
+    config_list = ["config_2.yaml", "config_3.yaml"]
     # config_list = ["config_custom.yaml"]
     test_values: List[SimContext] = []
     for config_name in config_list:
