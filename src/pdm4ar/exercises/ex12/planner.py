@@ -54,7 +54,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = True
+        self.visualize = False
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
