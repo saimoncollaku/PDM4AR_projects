@@ -315,7 +315,7 @@ class Cost:
     def get_box(self, x, y, psi, inflate_x=0.0, inflate_y=0.4):
         # can only assume all cars have same geometry
         cos_psi, sin_psi = np.cos(psi), np.sin(psi)
-        lr, lf, wh = self.sg.lr + inflate_x, self.sg.lf + inflate_x, self.sg.w_half + inflate_y
+        lr, lf, wh = self.sg.lr + 0.4, self.sg.lf + inflate_x, self.sg.w_half + inflate_y
         box_corners = [
             [
                 x - lr * cos_psi + wh * sin_psi,
@@ -397,6 +397,7 @@ class Cost:
 
     def penalize_closeness_from_obstacles(self):
         cost = 0
+        self.__trajectory.collision_free = True
         for player in self.__observations.players:
             if player != self.name:
                 obs_box = self.__observations.players[player].occupancy
@@ -454,7 +455,10 @@ class Cost:
                     # dist_perp = abs(np.dot(obs_vec, obs_perp))
 
                     obs_box_t = Polygon(zip(np.array(obx) + obs_px - obs_state.x, np.array(oby) + obs_py - obs_state.y))
-                    dist.append(self_box.distance(obs_box_t))
+                    obs_box_dist = self_box.distance(obs_box_t)
+                    if obs_box_dist <= 0.1:
+                        self.__trajectory.collision_free = False
+                    dist.append(obs_box_dist)
                     # ellip_dist = (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 - 1
                     # dist.append(ellip_dist)
 
@@ -508,7 +512,7 @@ class Evaluator:
             costs[i] = sum(costs_dict.values())
         path_sort_idx = np.argsort(costs)
         best_path_index = -1
-        for path_idx in path_sort_idx:
+        for path_idx in path_sort_idx[:50]:
             # if np.isinf(costs[path_idx]):
             # continue
             # print(
@@ -516,12 +520,13 @@ class Evaluator:
             #         path_idx, costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
             #     )
             # )
-            collides = self.collision_filter.check(all_samples[path_idx], sim_obs, self.obs_kin)
-            if not collides:
+            # collides = self.collision_filter.check(all_samples[path_idx], sim_obs, self.obs_kin)
+            # if not collides:
+            if all_samples[path_idx].collision_free:
                 best_path_index = path_idx
                 break
         # print(best_path_index, costs[best_path_index])
-        all_samples[best_path_index].collision_free = True
+        # all_samples[best_path_index].collision_free = True
 
         if self.visualize:
             self.fig.savefig("../../out/12/traj_cost.png")

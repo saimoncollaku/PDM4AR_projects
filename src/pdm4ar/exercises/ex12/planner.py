@@ -138,16 +138,22 @@ class Planner:
         max_deceleration = self.sp.acc_limits[0]
         ax = max_deceleration * np.cos(self.lane_psi)
         ay = max_deceleration * np.sin(self.lane_psi)
-        states = []
-        for step in range(time_steps):
+        states = [init_state]
+        for step in range(1, time_steps):
             t = dt * step
-            v = max(init_state.vx + max_deceleration * t, self.agent_params.min_sample_speed)
+            v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
             vx = v * np.cos(self.lane_psi)
             vy = v * np.sin(self.lane_psi)
             x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
-            state = VehicleState(x=x, y=y, psi=self.lane_psi, vx=v, delta=0)
+            state = VehicleState(
+                x=x,
+                y=y,
+                psi=self.lane_psi,
+                vx=v,
+                delta=np.arctan2((self.lane_psi - states[-1].psi) / dt, v / self.sg.wheelbase),
+            )
             states.append(state)
-        timesteps = np.linspace(current_time, current_time + time_steps * dt, time_steps).tolist()
+        timesteps = list(current_time + dt * np.arange(time_steps))
         return Trajectory(timesteps, states)
 
     # scenario update once
