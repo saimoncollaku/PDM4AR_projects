@@ -5,23 +5,21 @@ testcases:
     scenario: "USA_US101-9_1_T-1"
     max_sim_time: 10.0
     ego:
-      original_name: P18
-      goal_lane_id: 27
+      original_name: P15
+      goal_lane_id: 29
     others:
-      names: [P4, P10, P15, P19, P21]
-      # names: "all"
-    description: "scenario1"
+      names: [P4, P10, P19, P18, P21]
+    description: "scenario2"
 
   -
     scenario: "USA_US101-9_1_T-1"
     max_sim_time: 10.0
     ego:
-      original_name: P15
-      goal_lane_id: 29
+      original_name: P18
+      goal_lane_id: 27
     others:
-      names: [P4, P10, P19, P18, P21]
-      # names: "all"
-    description: "scenario2"
+      names: [P4, P10, P15, P19, P21]
+    description: "scenario1"
 
   -
     scenario: "USA_US101-9_1_T-1"
@@ -31,7 +29,6 @@ testcases:
       goal_lane_id: 27
     others:
       names: [P4, P19, P15, P18, P21]
-      # names: "all"
     description: "scenario3"
 
   -
@@ -42,7 +39,6 @@ testcases:
       goal_lane_id: 29
     others:
       names: [P4, P10, P15, P18, P21]
-      # names: "all"
     description: "scenario4"
 
   -
@@ -53,7 +49,6 @@ testcases:
       goal_lane_id: 7
     others:
       names: [P7, P10, P13, P17, P18, P19, P21]
-      # names: "all"
     description: "scenario5"
 
   -
@@ -64,7 +59,6 @@ testcases:
       goal_lane_id: 8
     others:
       names: [P7, P10, P14, P17, P18, P19, P21]
-      # names: "all"
     description: "scenario6"
 
   -
@@ -75,10 +69,9 @@ testcases:
       goal_lane_id: 7
     others:
       names: [P7, P13, P14, P17, P18, P19, P21]
-      # names: "all"
     description: "scenario7"
 
- -
+  -
     scenario: "ESP_Mad-1_10_I-1-1.cr"
     max_sim_time: 15.0
     ego:
@@ -86,7 +79,6 @@ testcases:
       goal_lane_id: 8
     others:
       names: [P7, P10, P14, P13, P18, P19, P21]
-      # names: "all"
     description: "scenario8"
 
 seed: 98

@@ -117,8 +117,10 @@ class CollisionFilter:
     def __init__(self, init_obs, visualize):
         self.name = init_obs.my_name
         self.sg = init_obs.model_geometry
+        self.sp = init_obs.model_params
         self.visualize = visualize
         self.dt = 0.1
+        self.clearance = np.sqrt(self.sg.lr**2 + self.sg.w_half**2) + 0.1
         # self.dist_parallel = (self.sg.lr + self.sg.lf) / 2 + 3.5
         # self.dist_perp = self.sg.width / 2 + 3.5
 
@@ -141,10 +143,10 @@ class CollisionFilter:
             plt.close(self.fig)
         return collides
 
-    def get_box(self, x, y, psi, inflate=0.0):
+    def get_box(self, x, y, psi, inflate_x=0.0, inflate_y=0.4):
         # can only assume all cars have same geometry
         cos_psi, sin_psi = np.cos(psi), np.sin(psi)
-        lr, lf, wh = self.sg.lr + inflate, self.sg.lf + inflate, self.sg.w_half + inflate
+        lr, lf, wh = self.sg.lr + 0.4, self.sg.lf + inflate_x, self.sg.w_half + inflate_y
         box_corners = [
             [
                 x - lr * cos_psi + wh * sin_psi,
@@ -174,13 +176,16 @@ class CollisionFilter:
 
         obs_vec = np.array([self.__trajectory.x[0] - obs_state.x, self.__trajectory.y[0] - obs_state.y])
         obs_dot = np.dot(obs_vec, obs_head)
-        obs_vel = 0 if obs_dot > 0 else obs_state.vx
-        obs_acc = 0 if obs_dot > 0 else obs_acc
+        # print("Obstacle {} distance: {}".format(obs_name, obs_dot))
+        obs_vel = 0 if obs_dot > self.clearance else obs_state.vx
+        obs_acc = 0 if obs_dot > self.clearance else obs_acc
+        # obs_vel, obs_acc = 0, 0
+        min_dist = abs(obs_dot)
 
-        for i in range(self.__trajectory.T):
+        for i in range(self.__trajectory.T - 1):
             pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
 
-            self_box = self.get_box(pt_x, pt_y, pt_psi)
+            self_box = self.get_box(pt_x, pt_y, pt_psi, 0.4)
 
             if self.visualize:
                 sbx, sby = self_box.exterior.xy
@@ -203,7 +208,9 @@ class CollisionFilter:
             # dist_perp = abs(np.dot(obs_vec, obs_perp))
             # dist = np.linalg.norm(dist_vec, 2)
             # if (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 <= 1:
-            if self_box.intersects(obs_box_t):
+            min_dist = min(min_dist, self_box.distance(obs_box_t))
+
+            if self_box.distance(obs_box_t) <= 0.1:
                 return True
 
             if self.visualize:
@@ -227,6 +234,65 @@ class CollisionFilter:
                 # self.axes.arrow(obs_x, obs_y, obs_perp[0], obs_perp[1], width=0.1, alpha=0.1)
                 # self.axes.arrow(obs_x, obs_y, obs_head[0], obs_head[1], width=0.1, alpha=0.1)
 
+        i = self.__trajectory.T - 1
+        pt_x, pt_y, pt_psi, pt_vx = (
+            self.__trajectory.x[i],
+            self.__trajectory.y[i],
+            self.__trajectory.psi[i],
+            self.__trajectory.vx[i],
+        )
+
+        # print("Stopping distance: ", pt_vx**2 / abs(self.sp.acc_limits[0]))
+        self_box = self.get_box(pt_x, pt_y, pt_psi, pt_vx**2 / abs(self.sp.acc_limits[0]))
+
+        if self.visualize:
+            sbx, sby = self_box.exterior.xy
+            self.axes.plot(sbx, sby, color="yellow", alpha=0.4)
+            self.axes.fill(sbx, sby, color="yellow", alpha=i / self.__trajectory.T * 0.4)
+
+        # for j in range(max(0, i - 1), min(self.__trajectory.T, i + 1)):
+        # j = i
+        obs_x = np.array(obx) + i * self.__trajectory.dt * (
+            obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+        ) * np.cos(obs_state.psi)
+        obs_y = np.array(oby) + i * self.__trajectory.dt * (
+            obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+        ) * np.sin(obs_state.psi)
+        # obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
+        # obs_dot = np.dot(obs_vec, obs_head)
+
+        obs_box_t = Polygon(zip(obs_x, obs_y))
+        # dist_parallel = abs(obs_dot)
+        # dist_perp = abs(np.dot(obs_vec, obs_perp))
+        # dist = np.linalg.norm(dist_vec, 2)
+        # if (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 <= 1:
+        min_dist = min(min_dist, self_box.distance(obs_box_t))
+        print("Obstacle {} min distance: {}".format(obs_name, min_dist))
+
+        if self_box.distance(obs_box_t) <= 0.1:
+            return True
+
+        if self.visualize:
+            self.axes.plot(
+                # np.array(obx) + obs_x - obs_state.x,
+                # np.array(oby) + obs_y - obs_state.y,
+                obs_x,
+                obs_y,
+                color="royalblue" if obs_vel > 0 else "purple",
+                alpha=0.4,
+            )
+            self.axes.fill(
+                # np.array(obx) + obs_x - obs_state.x,
+                # np.array(oby) + obs_y - obs_state.y,
+                obs_x,
+                obs_y,
+                color=plt.get_cmap("viridis")(i / self.__trajectory.T),
+                alpha=i / self.__trajectory.T * 0.1,
+            )
+            # self.axes.arrow(obs_x, obs_y, obs_vec[0], obs_vec[1], width=0.1, alpha=0.1)
+            # self.axes.arrow(obs_x, obs_y, obs_perp[0], obs_perp[1], width=0.1, alpha=0.1)
+            # self.axes.arrow(obs_x, obs_y, obs_head[0], obs_head[1], width=0.1, alpha=0.1)
+
         return False
 
 
@@ -242,7 +308,11 @@ class Cost:
     def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: list) -> None:
         self.name = init_obs.my_name
         assert isinstance(init_obs.model_geometry, VehicleGeometry)
+
         self.sg = init_obs.model_geometry
+        self.sp = init_obs.model_params
+        self.clearance = np.sqrt(self.sg.lr**2 + self.sg.w_half**2) + 0.1
+
         self.__reference = ref_line[::100]
         self.weights = {
             self.penalize_acceleration: fn_weights[0],  # 1e1 order
@@ -256,10 +326,10 @@ class Cost:
         # self.dist_parallel = (self.sg.lr + self.sg.lf) / 2 + 3.5
         # self.dist_perp = self.sg.width / 2 + 3.5
 
-    def get_box(self, x, y, psi, inflate=0.0):
+    def get_box(self, x, y, psi, inflate_x=0.0, inflate_y=0.4):
         # can only assume all cars have same geometry
         cos_psi, sin_psi = np.cos(psi), np.sin(psi)
-        lr, lf, wh = self.sg.lr + inflate, self.sg.lf + inflate, self.sg.w_half + inflate
+        lr, lf, wh = self.sg.lr + inflate_x, self.sg.lf + inflate_x, self.sg.w_half + inflate_y
         box_corners = [
             [
                 x - lr * cos_psi + wh * sin_psi,
@@ -351,13 +421,14 @@ class Cost:
 
                 obs_vec = np.array([self.__trajectory.x[0] - obs_state.x, self.__trajectory.y[0] - obs_state.y])
                 obs_dot = np.dot(obs_vec, obs_head)
-                obs_vel = 0 if obs_dot > 0 else obs_state.vx
-                obs_acc = 0 if obs_dot > 0 else self.__obs_acc[player]["acc"]
+                obs_vel = 0 if obs_dot > self.clearance else obs_state.vx
+                obs_acc = 0 if obs_dot > self.clearance else self.__obs_acc[player]["acc"]
+                # obs_vel, obs_acc = 0, 0
 
                 dist = [1e3]
-                for i in range(self.__trajectory.T):
+                for i in range(self.__trajectory.T - 1):
                     pt_x, pt_y, pt_psi = self.__trajectory.x[i], self.__trajectory.y[i], self.__trajectory.psi[i]
-                    self_box = self.get_box(pt_x, pt_y, pt_psi)
+                    self_box = self.get_box(pt_x, pt_y, pt_psi, 0.4)
 
                     obs_x = np.array(obx) + i * self.__trajectory.dt * (
                         obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
@@ -376,6 +447,30 @@ class Cost:
                     dist.append(self_box.distance(obs_box_t))
                     # ellip_dist = (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 - 1
                     # dist.append(ellip_dist)
+
+                i = self.__trajectory.T - 1
+                pt_x, pt_y, pt_psi, pt_vx = (
+                    self.__trajectory.x[i],
+                    self.__trajectory.y[i],
+                    self.__trajectory.psi[i],
+                    self.__trajectory.vx[i],
+                )
+
+                self_box = self.get_box(pt_x, pt_y, pt_psi, pt_vx**2 / abs(self.sp.acc_limits[0]), 0)
+
+                # for j in range(max(0, i - 1), min(self.__trajectory.T, i + 1)):
+                # j = i
+                obs_x = np.array(obx) + i * self.__trajectory.dt * (
+                    obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+                ) * np.cos(obs_state.psi)
+                obs_y = np.array(oby) + i * self.__trajectory.dt * (
+                    obs_vel + 0.5 * i * self.__trajectory.dt * obs_acc
+                ) * np.sin(obs_state.psi)
+                # obs_vec = np.array([pt_x - obs_x, pt_y - obs_y])
+                # obs_dot = np.dot(obs_vec, obs_head)
+
+                obs_box_t = Polygon(zip(obs_x, obs_y))
+                dist.append(self_box.distance(obs_box_t))
 
                 pen = min(dist)
                 cost += 1 / (pen**2) if pen > 0 else 1e3
@@ -426,13 +521,13 @@ class Evaluator:
         path_sort_idx = np.argsort(costs)
         best_path_index = -1
         for path_idx in path_sort_idx:
-            if np.isinf(costs[path_idx]):
-                continue
-            print(
-                "Checking path {}: Total cost: {}, {}".format(
-                    path_idx, costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
-                )
-            )
+            # if np.isinf(costs[path_idx]):
+            # continue
+            # print(
+            #     "Checking path {}: Total cost: {}, {}".format(
+            #         path_idx, costs[path_idx], self.get_costs(all_samples[path_idx], sim_obs)
+            #     )
+            # )
             collides = self.collision_filter.check(all_samples[path_idx], sim_obs, self.obs_kin)
             if not collides:
                 best_path_index = path_idx
