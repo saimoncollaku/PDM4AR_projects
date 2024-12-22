@@ -54,7 +54,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = True
+        self.visualize = False
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
@@ -144,7 +144,7 @@ class Planner:
             v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
             vx = v * np.cos(self.lane_psi)
             vy = v * np.sin(self.lane_psi)
-            x, y = (vx**2 - ux**2) / 2 * ax + init_state.x, (vy**2 - uy**2) / 2 * ay + init_state.y
+            x, y = (vx**2 - ux**2) / (2 * ax) + init_state.x, (vy**2 - uy**2) / (2 * ay) + init_state.y
             state = VehicleState(
                 x=x,
                 y=y,
@@ -179,20 +179,20 @@ class Planner:
         # )  # type: ignore
         # logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")  # type: ignore
 
+        # start_pt = np.stack([best_path.x[0], best_path.y[0]])
+        # start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
+        # end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
+        # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
+        # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+
         if not (best_path.kinematics_feasible and best_path.collision_free):
             logger.error("Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
         else:
-            # start_pt = np.stack([best_path.x[0], best_path.y[0]])
-            # start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
-            # end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
-            # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
-            # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+            logger.warning("Replanning at {}".format(current_time))
 
-            # self.replan_in_t = best_path.t[-1]
-            self.replan_in_t = 1.0
             best_path.compute_steering(self.sg.wheelbase)
             # ddelta = np.gradient(best_path.delta)
             # logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
@@ -205,9 +205,14 @@ class Planner:
             states[0] = current_state
             states[-1].psi = self.lane_psi  # assume heading aligned to lane at the end of trajectory
             states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix for delta bump
-            agent_traj = Trajectory(timestamps, states)
+            best_agent_traj = Trajectory(timestamps, states)
+
+            agent_traj = best_agent_traj
+            # self.replan_in_t = best_path.t[-1]
+            self.replan_in_t = 1.0
 
         self.plans.append(agent_traj)
+        # self.plans.append(best_agent_traj)
         self.controller.set_reference(agent_traj)
         self.last_replan_time = current_time
 
@@ -224,6 +229,11 @@ class Planner:
         my_traj = Trajectory(timestamps=self.all_timesteps, values=self.all_states)
 
         self.evaluator.update_obs_acc(sim_obs)
+
+        # self.visualizer.clear_viz()
+        # self.visualizer.plot_scenario(sim_obs)
+        # self.visualizer.plot_reference(self.reference_points)
+        # self.visualizer.clear_viz()
 
         if self.lane_psi is None:  # runs once
             self.create_sampler(current_state)

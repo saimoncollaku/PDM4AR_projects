@@ -32,7 +32,6 @@ def obtain_complete_ref(goal: RefLaneGoal, lanelet_network: LaneletNetwork) -> t
         raise ValueError("No lanelet IDs found for the given reference points.")
 
     # Step 2: Find the starting lanelet (traverse backwards to find no-predecessor lanelet)
-    lanelet_network = lanelet_network
     current_id = next(iter(lane_ids))  # Start with one lanelet ID
     first_lanelet_id = current_id
 
@@ -64,12 +63,22 @@ def obtain_complete_ref(goal: RefLaneGoal, lanelet_network: LaneletNetwork) -> t
             current_id = None  # No more successors
 
     # Step 4: Ensure at least 5 waypoints in the path
-    complete_path = np.array(complete_path)
     if len(complete_path) < 5:
         start_point = complete_path[0]
         end_point = complete_path[-1]
         # Generate 5 evenly spaced points including start and end
-        complete_path = np.linspace(start_point, end_point, 5)
+        complete_path = np.linspace(start_point, end_point, 5).tolist()
+
+    idx = 5
+    straight_line_first, straight_line_last = complete_path[-idx], complete_path[-1]
+    # Assumption: This path is straight
+    vector_along_lanelet = straight_line_last - straight_line_first
+    length_difference = np.linalg.norm(vector_along_lanelet, ord=2)
+    distances = np.linspace(0, length_difference, idx)
+    extrapolated_points = [straight_line_first + distance * vector_along_lanelet for distance in distances]
+    complete_path.extend(extrapolated_points)
+
+    complete_path = np.array(complete_path)
 
     return complete_path, first_lanelet_id
 

@@ -108,6 +108,10 @@ class Visualizer:
         # # https://stackoverflow.com/questions/23966121/updating-the-positions-and-colors-of-pyplot-scatter
         # return traj_lines, traj_points
 
+    def plot_reference(self, reference: np.ndarray):
+        self.axes.scatter(reference[:, 0], reference[:, 1], c="red", marker="x")
+        self.save_fig("../../out/12/reference.png")
+
     def plot_scenario(self, obs: SimObservations):
         if self.dg_scenario.scenario:
             self.draw_params.lanelet_network.traffic_light.draw_traffic_lights = True

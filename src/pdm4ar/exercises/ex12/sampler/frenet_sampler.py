@@ -152,7 +152,7 @@ class FrenetSampler:
                 fp.d_dd = [lat_qp.calc_second_derivative(t) for t in fp.t]
                 fp.d_ddd = [lat_qp.calc_third_derivative(t) for t in fp.t]
 
-                # Loongitudinal sampling
+                # Longitudinal sampling
                 for vi in np.arange(self.min_v, self.max_v, self.v_res):
                     tfp = copy.deepcopy(fp)
                     lon_qp = Quartic(self.s0, self.sdot, self.sdotdot, vi, 0.0, ti)
@@ -161,9 +161,6 @@ class FrenetSampler:
                     tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
                     tfp.s_dd = [lon_qp.calc_second_derivative(t) for t in fp.t]
                     tfp.s_ddd = [lon_qp.calc_third_derivative(t) for t in fp.t]
-
-                    Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
-                    Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
 
                     tfp.T = len(tfp.t)
 
