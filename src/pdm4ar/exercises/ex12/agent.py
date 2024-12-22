@@ -118,9 +118,9 @@ class Pdm4arAgent(Agent):
         else:
             road_l = 0
             road_r = road_generic * round(abs(c_d) / road_generic)
-        print(c_d, self.road_distances)
-        print(road_l, road_r, round(abs(c_d) / road_generic))
-        print(np.arange(-road_r, road_l + road_generic, road_generic))
+        # print(c_d, self.road_distances)
+        # print(road_l, road_r, round(abs(c_d) / road_generic))
+        # print(np.arange(-road_r, road_l + road_generic, road_generic))
         # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 
