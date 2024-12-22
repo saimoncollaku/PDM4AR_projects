@@ -143,7 +143,7 @@ class FrenetSampler:
         self.last_samples = []
 
         # Lateral sampling
-        for di in np.arange(-self.max_road_r, self.max_road_l, self.road_res):
+        for di in np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res):
 
             # Time sampling
             for ti in np.arange(self.min_t, self.max_t, self.dt):

@@ -113,14 +113,14 @@ class Pdm4arAgent(Agent):
         c_d = current_frenet[0][1]
         s0 = current_frenet[0][0]
         if c_d > 0:
-            road_l = abs(c_d)
-            road_r = road_generic
+            road_l = road_generic * round(abs(c_d) / road_generic)
+            road_r = 0
         else:
-            road_l = road_generic
-            road_r = abs(c_d)
-        # print(c_d, self.road_distances)
-        # print(road_l, road_r)
-        # print(np.arange(-road_r, road_l, road_generic))
+            road_l = 0
+            road_r = road_generic * round(abs(c_d) / road_generic)
+        print(c_d, self.road_distances)
+        print(road_l, road_r, round(abs(c_d) / road_generic))
+        print(np.arange(-road_r, road_l + road_generic, road_generic))
         # perf_metric: v_diff = np.maximum(self.max_velocity - 25.0, 5.0 - self.min_velocity)
         self.sampler = FrenetSampler(5, 25, road_l, road_r, road_generic, current_state.vx, c_d, 0, 0, s0)
 
@@ -185,8 +185,8 @@ class Pdm4arAgent(Agent):
             end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
             logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
-            self.replan_t = best_path.t[-1]
-            # self.replan_t = 1.0
+            # self.replan_t = best_path.t[-1]
+            self.replan_t = 1.0
             best_path.compute_steering(self.sg.wheelbase)
             ddelta = np.gradient(best_path.delta)
             logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
