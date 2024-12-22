@@ -267,7 +267,7 @@ class CollisionFilter:
         # dist = np.linalg.norm(dist_vec, 2)
         # if (dist_perp / self.dist_perp) ** 2 + (dist_parallel / self.dist_parallel) ** 2 <= 1:
         min_dist = min(min_dist, self_box.distance(obs_box_t))
-        print("Obstacle {} min distance: {}".format(obs_name, min_dist))
+        # print("Obstacle {} min distance: {}".format(obs_name, min_dist))
 
         if self_box.distance(obs_box_t) <= 0.1:
             return True

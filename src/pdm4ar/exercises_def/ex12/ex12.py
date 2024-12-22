@@ -31,7 +31,15 @@ def ex12_evaluation(sim_context: SimContext, ex_out=None) -> Tuple[PlayerMetrics
     # report evaluation
     score: float = player_metrics.reduce_to_score()
     score_str = f"Score: {score:.2f}\n" + str(player_metrics)
+    print("\n============")
+    print(sim_context.description)
+    print("============")
     print(score_str)
+    with open("results.txt", "a") as f:
+        f.write("\n============\n")
+        f.write(sim_context.description)
+        f.write("\n============\n")
+        f.write(score_str)
     r.text("Evaluation: ", text=pprint.pformat(player_metrics))
     # r.add_child(report)
     if player_metrics.collided:

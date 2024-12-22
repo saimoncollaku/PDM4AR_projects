@@ -4,12 +4,6 @@ import numpy as np
 
 from pdm4ar.exercises.ex12.sampler.polynomials import Quartic, Quintic
 
-KJ = 0.1
-KT = 0.1
-KD = 1e10
-KLAT = 1.0
-KLON = 1.0
-
 
 class Sample:
     dt: float
@@ -47,20 +41,16 @@ class Sample:
         self.s_dd = []
         self.s_ddd = []
 
-        self.x = None
-        self.y = None
-        self.vx = None
-        self.psi = None
-        self.delta = None
-        self.kappa = None
+        self.x = None  # type: ignore
+        self.y = None  # type: ignore
+        self.vx = None  # type: ignore
+        self.psi = None  # type: ignore
+        self.delta = None  # type: ignore
+        self.kappa = None  # type: ignore
 
         self.kinematics_feasible = False
         self.collision_free = False
-        self.cost = np.inf
-
-        self.cd = 0.0
-        self.cv = 0.0
-        self.cf = 0.0
+        self.cost = {}
 
     def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
         cart_grad: np.ndarray = np.gradient(cartesian_points, axis=0)
@@ -111,11 +101,16 @@ class FrenetSampler:
         road_width_l: float,
         road_width_r: float,
         road_res: float,
-        starting_speed: float,
         starting_d: float,
         starting_dd: float,
         starting_ddd: float,
         starting_s: float,
+        starting_sd: float,
+        starting_sdd: float,
+        dt: float = 0.1,
+        max_t: float = 2.6,
+        min_t: float = 2.0,
+        v_res: float = 2,
     ):
         self.max_road_l = road_width_l
         self.max_road_r = road_width_r
@@ -123,22 +118,21 @@ class FrenetSampler:
         self.last_samples = []
         self.last_best = []
 
-        self.sdot = starting_speed
         self.d0 = starting_d
         self.ddot = starting_dd
         self.ddotdot = starting_ddd
         self.s0 = starting_s
+        self.sdot = starting_sd
+        self.sdotdot = starting_sdd
 
         self.min_v = min_speed
         self.max_v = max_speed
-        self.v_res = 2
+        self.v_res = v_res
 
-        # ! CAN BE CHANGED
-        self.dt = 0.1
-        self.max_t = 2.6
-        self.min_t = 2.0
+        self.dt = dt
+        self.max_t = max_t
+        self.min_t = min_t
 
-    # TODO, its possible that we need to make another path maker for low speed
     def get_paths_merge(self) -> list[Sample]:
         self.last_samples = []
 
@@ -161,7 +155,7 @@ class FrenetSampler:
                 # Loongitudinal sampling
                 for vi in np.arange(self.min_v, self.max_v, self.v_res):
                     tfp = copy.deepcopy(fp)
-                    lon_qp = Quartic(self.s0, self.sdot, 0.0, vi, 0.0, ti)
+                    lon_qp = Quartic(self.s0, self.sdot, self.sdotdot, vi, 0.0, ti)
 
                     tfp.s = [lon_qp.calc_point(t) for t in fp.t]
                     tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
@@ -171,29 +165,16 @@ class FrenetSampler:
                     Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
                     Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
 
-                    tfp.cd = KJ * Jp + KT * ti
-                    if tfp.d[-1] > self.road_res / 2 or tfp.d[-1] < -self.road_res / 2:
-                        tfp.cd += KD
-
-                    # tfp.cd = KJ * Jp + KT * ti + KD * tfp.d[-1] ** 2
-                    tfp.cv = KJ * Js + KT * ti
-                    tfp.cf = KLAT * tfp.cd + KLON * tfp.cv
-
                     tfp.T = len(tfp.t)
 
                     self.last_samples.append(tfp)
 
         return self.last_samples
 
-    def assign_init_speed(self, index: int, replan_time: float = 3.5) -> None:
-        i = int(replan_time / self.dt) - 1
-
-        fp = self.last_samples[index]
-        self.ddot = fp.d_d[i]
-        self.ddotdot = fp.d_dd[i]
-
-    def assign_init_kinematics(self, s0, d0, sdot, ddot) -> None:
+    def assign_init_kinematics(self, s0, d0, sdot, ddot, sdotdot, ddotdot) -> None:
         self.sdot = sdot
         self.d0 = d0
         self.s0 = s0
         self.ddot = ddot
+        self.sdotdot = sdotdot
+        self.ddotdot = ddotdot

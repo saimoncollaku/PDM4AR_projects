@@ -2,9 +2,10 @@ import numpy as np
 from commonroad.scenario.lanelet import Lanelet, LaneletNetwork
 from dg_commons.sim.goals import PlanningGoal, RefLaneGoal
 from dg_commons.sim import SimObservations, InitSimObservations
+from commonroad.scenario.lanelet import LaneletNetwork
 
 
-def obtain_complete_ref(init_obs: InitSimObservations) -> tuple[np.ndarray, int]:
+def obtain_complete_ref(goal: RefLaneGoal, lanelet_network: LaneletNetwork) -> tuple[np.ndarray, int]:
     """
     Obtain the full reference trajectory by connecting the input reference points' lanelet
     with its predecessors and successors in a continuous order. Returns the complete path
@@ -16,7 +17,7 @@ def obtain_complete_ref(init_obs: InitSimObservations) -> tuple[np.ndarray, int]
              - first_lanelet_id: The ID of the first lanelet (with no predecessor).
     """
     # Step 1: Extract reference points and find corresponding lanelet IDs
-    ptx = init_obs.goal.ref_lane.control_points
+    ptx = goal.ref_lane.control_points
     x = [c.q.p[0] for c in ptx]
     y = [c.q.p[1] for c in ptx]
 
@@ -24,14 +25,14 @@ def obtain_complete_ref(init_obs: InitSimObservations) -> tuple[np.ndarray, int]
     reference_points = np.column_stack((np.linspace(x[0], x[-1], 10), np.linspace(y[0], y[-1], 10)))
     point_list = [np.array(point) for point in reference_points]
 
-    lane_ids = init_obs.dg_scenario.lanelet_network.find_lanelet_by_position(point_list=point_list)
+    lane_ids = lanelet_network.find_lanelet_by_position(point_list=point_list)
     lane_ids = {lid[0] for lid in lane_ids if lid}  # Remove duplicates
 
     if not lane_ids:
         raise ValueError("No lanelet IDs found for the given reference points.")
 
     # Step 2: Find the starting lanelet (traverse backwards to find no-predecessor lanelet)
-    lanelet_network = init_obs.dg_scenario.lanelet_network
+    lanelet_network = lanelet_network
     current_id = next(iter(lane_ids))  # Start with one lanelet ID
     first_lanelet_id = current_id
 
