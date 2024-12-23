@@ -447,9 +447,9 @@ class Cost:
                     obs_dist = np.linalg.norm(obs_vec, 2)
                     stop_dist = 0.4
 
-                    if i > self.__trajectory.T - 6:
-                        if np.arccos(np.dot(obs_vec, obs_head) / obs_dist) > 0.98 * np.pi:
-                            stop_dist = (max(pt_vx - obs_vel, 0)) ** 2 / abs(self.sp.acc_limits[0])
+                    # if i > self.__trajectory.T - 6:
+                    # if np.arccos(np.dot(obs_vec, obs_head) / obs_dist) > 0.98 * np.pi:
+                    # stop_dist = (max(pt_vx - obs_vel, 0)) ** 2 / abs(self.sp.acc_limits[0])
 
                     self_box = self.get_box(pt_x, pt_y, pt_psi, stop_dist)
 

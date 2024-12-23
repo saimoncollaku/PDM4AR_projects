@@ -52,6 +52,7 @@ class Planner:
         self.cmd_acc = 0
         self.cmd_ddelta = 0
         self.min_ttc = 0
+        self.stopping_time = 0
 
         self.agent_params = params
         self.sp = sp
@@ -178,7 +179,8 @@ class Planner:
         assert isinstance(current_state, VehicleState)
 
         if (
-            self.min_ttc < self.agent_params.max_min_ttc
+            self.min_ttc != np.inf
+            and self.min_ttc < self.stopping_time
             and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
         ):
             logger.error("No feasible paths, Entering emergency trajectory")
@@ -234,7 +236,7 @@ class Planner:
                 agent_traj = best_agent_traj
                 self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
 
-                print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
+                # print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
                 # self.replan_in_t = self.agent_params.replan_del_t
 
         self.plans.append(agent_traj)
@@ -247,7 +249,7 @@ class Planner:
     def get_ttc(self, sim_obs: SimObservations):
         self_box = sim_obs.players[self.my_name].occupancy
         self_state = sim_obs.players[self.my_name].state
-        min_ttc = 100
+        min_ttc = np.inf
         collide_obs = None
         for player, obs in sim_obs.players.items():
             if player != self.my_name:
@@ -276,7 +278,12 @@ class Planner:
 
         self.min_ttc, collide_obs = self.get_ttc(sim_obs)
         if collide_obs is not None:
-            logger.error("Collision with {} in {:.2f} s".format(collide_obs, self.min_ttc))
+            logger.error(
+                "Collision with {} in {:.2f} s, stopping time {:.2f}".format(
+                    collide_obs, self.min_ttc, self.stopping_time
+                )
+            )
+            self.stopping_time = (current_state.vx - 5.0) / abs(self.sp.acc_limits[0])
 
         # if self.min_ttc < self.replan_in_t:
         # logger.warning("Collision detected, replanning")
@@ -293,7 +300,8 @@ class Planner:
             return 0.0, 0.0
 
         if np.isclose(float(current_time - self.last_replan_time), self.replan_in_t) or (
-            self.min_ttc < self.agent_params.max_min_ttc
+            self.min_ttc != np.inf
+            and self.min_ttc < self.stopping_time
             and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
         ):
             # or (
