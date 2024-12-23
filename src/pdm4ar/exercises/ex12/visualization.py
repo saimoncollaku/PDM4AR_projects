@@ -136,6 +136,8 @@ class Visualizer:
         ax.set_aspect("equal")
 
     def plot_samples(self, samples, wb, num_plan):
+        if samples is None:
+            return
         feas_trajectories = []
         feas_idx = [idx for idx, sample in enumerate(samples) if sample.cost != np.inf]
         if len(feas_idx) > 0:

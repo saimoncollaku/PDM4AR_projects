@@ -50,6 +50,7 @@ class Sample:
 
         self.kinematics_feasible = False
         self.collision_free = False
+        self.towards_goal = False
         self.cost = {}
 
     def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
@@ -107,7 +108,7 @@ class FrenetSampler:
         starting_s: float,
         starting_sd: float,
         starting_sdd: float,
-        dt: float = 0.1,
+        del_t: float = 0.1,
         max_t: float = 2.6,
         min_t: float = 2.0,
         v_res: float = 2,
@@ -117,6 +118,7 @@ class FrenetSampler:
         self.road_res = road_res
         self.last_samples = []
         self.last_best = []
+        self.del_t = del_t
 
         self.d0 = starting_d
         self.ddot = starting_dd
@@ -129,7 +131,7 @@ class FrenetSampler:
         self.max_v = max_speed
         self.v_res = v_res
 
-        self.dt = dt
+        self.dt = 0.1
         self.max_t = max_t
         self.min_t = min_t
 
@@ -140,7 +142,7 @@ class FrenetSampler:
         for di in np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res):
 
             # Time sampling
-            for ti in np.arange(self.min_t, self.max_t, self.dt):
+            for ti in np.arange(self.min_t, self.max_t, self.del_t):
                 fp = Sample()
 
                 lat_qp = Quintic(self.d0, self.ddot, self.ddotdot, di, 0.0, 0.0, ti)
