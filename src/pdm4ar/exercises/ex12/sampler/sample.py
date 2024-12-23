@@ -5,6 +5,7 @@ import numpy as np
 class Samplers(Enum):
     FRENET = 0
     DUBINS = 1
+    EMERGENCY = 2
 
 
 class Sample:
@@ -63,7 +64,7 @@ class Sample:
         self.delta = None  # type: ignore
         self.kappa = None  # type: ignore
 
-        self.origin = None  # type: ignore
+        self.origin = Samplers.EMERGENCY  # type: ignore
 
         self.kinematics_feasible = False
         self.collision_free = False

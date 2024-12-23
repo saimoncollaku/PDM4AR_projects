@@ -453,7 +453,7 @@ class Dubins:
         num_frenet = 0
         num_dubin = 0
         for traj in trajectories:
-            if traj.cost == np.inf:
+            if not (traj.collision_free and traj.kinematics_feasible):
                 choose = np.random.random(1)
                 if choose < 0.5:
                     continue
@@ -467,7 +467,7 @@ class Dubins:
                     num_dubin += 1
                     plt.plot(traj.x, traj.y, color="brown", linestyle="-", alpha=0.7)
                     plt.scatter(traj.x[-1], traj.y[-1], color="black", alpha=0.2, s=2)
-                else:
+                elif traj.origin == Samplers.FRENET:
                     choose = np.random.random(1)
                     if choose < 0.5:
                         continue
@@ -475,7 +475,7 @@ class Dubins:
                     plt.plot(traj.x, traj.y, color="pink", linestyle="-", alpha=0.7)
                     plt.scatter(traj.x[-1], traj.y[-1], color="purple", alpha=0.2, s=2)
 
-        print(f"Plotting non_feasible: {num_non_feasible}, and in feasible: frenet: {num_frenet}, dubin: {num_dubin}")
+        print(f"Plotting non_feasible: {num_non_feasible}, and feasible: frenet: {num_frenet}, dubin: {num_dubin}")
         # Calculate the components of the arrow (unit vectors scaled for visualization)
         arrow_length = 0.2  # Length of the arrows
         u = [arrow_length * np.cos(angle) for angle in psi]  # X-component

@@ -13,9 +13,9 @@ class BasicController:
         self.i_gain = 6.0
         self.d_gain = 2.0
 
-        self.p_gain_delta = 10.0
-        self.i_gain_delta = 0.5
-        self.d_gain_delta = 4.0
+        self.p_gain_delta = 7.0
+        self.i_gain_delta = 2.0
+        self.d_gain_delta = 2.0
 
         self.psi_p_gain = 1.6
         self.psi_l_gain = 0.4

@@ -18,6 +18,7 @@ from commonroad.visualization.mp_renderer import MPRenderer
 from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
 from pdm4ar.exercises.ex12.sampler.dubins_algo import Dubins
 from pdm4ar.exercises_def.ex12.sim_context import ZOrders
+from dg_commons.planning import Trajectory
 
 
 class Visualizer:
@@ -161,13 +162,16 @@ class Visualizer:
         self.plot_trajectories(all_trajectories, colors=["grey" for traj in all_trajectories], alpha=0.2)
         self.save_fig(f"../../out/12/samples_{type_planner}.png")
 
-    def plot_samples_without_background(self, best_sample: Sample, samples: list[Sample]):
-        start_state = [best_sample.x[0], best_sample.y[0], best_sample.psi[0]]
-        end_state = [best_sample.x[-1], best_sample.y[-1], best_sample.psi[-1]]
+    def plot_samples_without_background(self, best_sample: Trajectory, samples: list[Sample]):
+        start_state = [best_sample._values[0].x, best_sample._values[0].y, best_sample._values[0].psi]
+        end_state = [best_sample._values[-1].x, best_sample._values[-1].y, best_sample._values[-1].psi]
+        x = [state.x for state in best_sample._values]
+        y = [state.y for state in best_sample._values]
+        psi = [state.psi for state in best_sample._values]
         Dubins.plot_any_trajectory(
-            best_sample.x,
-            best_sample.y,
-            best_sample.psi,
+            x,
+            y,
+            psi,
             start_state,
             end_state,
             "../../out/12/all_samples_only.png",

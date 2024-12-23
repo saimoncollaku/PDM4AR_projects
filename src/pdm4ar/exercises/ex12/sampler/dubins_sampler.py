@@ -53,44 +53,50 @@ class DubinSampler:
     def get_paths(self, s0, d0, psi0, v0) -> list[Sample]:
         samples = []
 
-        all_final_d = np.arange(-self.max_road_r, self.max_road_l + self.sample_dd, self.sample_dd)
-        all_final_s = np.arange(s0 + 2 * self.min_radius, s0 + 2 * self.min_radius + self.s_max, self.sample_ds)
+        all_final_d = [0]
+        starting_s = s0 + 3 * self.min_radius
+        all_final_s = np.arange(starting_s, starting_s + self.s_max, self.sample_ds)
+        max_v = max(self.max_v, v0)
+        all_traj_v = np.arange(self.min_v, max_v + self.step_v, self.step_v)
         # final_s can only be beyond a diameter of minimum radius to avoid U-turns.
-        num_ss, num_ds = len(all_final_s), len(all_final_d)
-        num_total = num_ss * num_ds
-        logger.warning("Generating (%d, %d) s and d values, totaling %d trajectories", num_ss, num_ds, num_total)
+        num_ss, num_ds, num_vv = len(all_final_s), len(all_final_d), len(all_traj_v)
+        num_total = num_ss * num_ds * num_vv
+        logger.warning(
+            "Generating (%d, %d, %d) s and d values, totaling %d trajectories", num_ss, num_ds, num_vv, num_total
+        )
 
         # Can vary trajectory velocity
         trajectory_velocity = v0
         logger.warning("Using trajectory generation velocity %f", trajectory_velocity)
-        if trajectory_velocity > self.max_v or trajectory_velocity < self.min_v:
-            logger.error("Out of velocity bounds: [%f, %f]", self.min_v, self.max_v)
-            # return samples
-        sample_distance = trajectory_velocity * self.dt
-        logger.warning("Sample minimum distance %f", sample_distance)
-        for df in all_final_d:
-            for sf in all_final_s:
+        # if trajectory_velocity > self.max_v or trajectory_velocity < self.min_v:
+        logger.error("Velocity bounds: [%f, %f]", self.min_v, max_v)
 
-                states_in_frenet = [(s0, d0), (sf, df)]
-                states_in_cartesian = self.spline_ref.get_xy(states_in_frenet)
-                init_state = states_in_cartesian[0, :]
-                final_state = states_in_cartesian[1, :]
+        for trajectory_velocity in all_traj_v:
+            sample_distance = trajectory_velocity * self.dt
+            logger.warning("Sample minimum distance %f", sample_distance)
+            for df in all_final_d:
+                for sf in all_final_s:
 
-                init_config = SE2Transform(init_state.tolist(), psi0)
-                final_config = SE2Transform(final_state.tolist(), self.lane_psi)
-                waypoints = self.dubins_generator.compute_path(init_config, final_config, sample_distance)
-                # self.dubins_generator.plot_trajectory(waypoints, init_config, final_config)
+                    states_in_frenet = [(s0, d0), (sf, df)]
+                    states_in_cartesian = self.spline_ref.get_xy(states_in_frenet)
+                    init_state = states_in_cartesian[0, :]
+                    final_state = states_in_cartesian[1, :]
 
-                sample = Sample()
-                sample.dt = self.dt
-                sample.t = np.arange(0, len(waypoints), 1) * self.dt
-                sample.T = len(sample.t)
-                sample.x = np.array([waypoint.p[0] for waypoint in waypoints])
-                sample.y = np.array([waypoint.p[1] for waypoint in waypoints])
-                sample.psi = np.array([waypoint.theta for waypoint in waypoints])
-                sample.vx = np.array([trajectory_velocity for _ in waypoints])
-                sample.store_kappa()
-                samples.append(sample)
-                sample.origin = Samplers.DUBINS
+                    init_config = SE2Transform(init_state.tolist(), psi0)
+                    final_config = SE2Transform(final_state.tolist(), self.lane_psi)
+                    waypoints = self.dubins_generator.compute_path(init_config, final_config, sample_distance)
+                    # self.dubins_generator.plot_trajectory(waypoints, init_config, final_config)
+
+                    sample = Sample()
+                    sample.dt = self.dt
+                    sample.t = np.arange(0, len(waypoints), 1) * self.dt
+                    sample.T = len(sample.t)
+                    sample.x = np.array([waypoint.p[0] for waypoint in waypoints])
+                    sample.y = np.array([waypoint.p[1] for waypoint in waypoints])
+                    sample.psi = np.array([waypoint.theta for waypoint in waypoints])
+                    sample.vx = np.array([trajectory_velocity for _ in waypoints])
+                    sample.store_kappa()
+                    samples.append(sample)
+                    sample.origin = Samplers.DUBINS
 
         return samples

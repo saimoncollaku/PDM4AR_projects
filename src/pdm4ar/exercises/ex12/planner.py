@@ -16,7 +16,7 @@ from pdm4ar.exercises.ex12.params import Pdm4arAgentParams
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 from pdm4ar.exercises.ex12.trajectory_evalulator import Evaluator
 from pdm4ar.exercises.ex12.controller import BasicController as Controller
-from pdm4ar.exercises.ex12.sampler.sample import Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
 from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
 from pdm4ar.exercises.ex12.sampler.dubins_sampler import DubinSampler
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref, get_lanelet_distances
@@ -117,17 +117,17 @@ class Planner:
         )
 
         self.dsampler = DubinSampler(
-            min_speed=self.agent_params.min_sample_speed,
+            min_speed=self.agent_params.min_sample_speed / 2,
             max_speed=self.agent_params.max_sample_speed,
             step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
             road_width_l=road_l,
             road_width_r=road_r,
-            s_max=4,
-            sample_ds=0.25,
+            s_max=10,
+            sample_ds=0.5,
             sample_dd=road_generic,
             lane_psi=self.lane_psi,
             wheel_base=self.sg.wheelbase,
-            max_steering_angle=self.sp.delta_max / 4,
+            max_steering_angle=self.sp.delta_max,
             max_acceleration=self.sp.acc_limits[1],
             dt=self.agent_params.dt,
             spline_ref=self.spline_ref,
@@ -136,22 +136,27 @@ class Planner:
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
         dt = self.agent_params.dt
 
-        ux = init_state.vx * np.cos(self.lane_psi)
-        uy = init_state.vx * np.sin(self.lane_psi)
         max_deceleration = self.sp.acc_limits[0]
-        ax = max_deceleration * np.cos(self.lane_psi)
-        ay = max_deceleration * np.sin(self.lane_psi)
+        # req_decel = max(max_deceleration, (self.sampler.min_v - init_state.vx) / dt)
+        req_decel = max_deceleration
+
         states = [init_state]
         for step in range(1, time_steps):
-            t = dt * step
-            v = max(init_state.vx + max_deceleration * t, self.fsampler.min_v)
-            vx = v * np.cos(self.lane_psi)
-            vy = v * np.sin(self.lane_psi)
-            x, y = (vx**2 - ux**2) / (2 * ax) + init_state.x, (vy**2 - uy**2) / (2 * ay) + init_state.y
+            v = max(init_state.vx + req_decel * dt * step, self.agent_params.min_sample_speed / 2)
+            # v = init_state.vx + req_decel * dt * step
+            ux, uy = init_state.vx * np.cos(states[-1].psi), init_state.vx * np.sin(states[-1].psi)
+
+            vx, vy = v * np.cos(states[-1].psi), v * np.sin(states[-1].psi)
+            ax, ay = req_decel * np.cos(states[-1].psi), req_decel * np.sin(states[-1].psi)
+
+            x, y = (((vx**2) - (ux**2)) / (2 * ax)) + init_state.x, (((vy**2) - (uy**2)) / (2 * ay)) + init_state.y
+            # psi = np.arctan2(y - states[-1].y, x - states[-1].x)
+            psi = states[-1].psi + dt * v * np.tan(states[-1].delta) / self.sg.wheelbase
+
             state = VehicleState(
                 x=x,
                 y=y,
-                psi=self.lane_psi,
+                psi=psi,
                 vx=v,
                 delta=np.arctan2((self.lane_psi - states[-1].psi) / dt, v / self.sg.wheelbase),
             )
@@ -165,6 +170,7 @@ class Planner:
         current_state = sim_obs.players[self.my_name].state
         current_time = float(sim_obs.time)
         assert isinstance(current_state, VehicleState)
+        logger.warning("Replanning at %f", current_time)
 
         # Sample from Frenet Sampler
         current_cart = np.column_stack((current_state.x, current_state.y))
@@ -180,12 +186,24 @@ class Planner:
 
         # Sample from Dubin Sampler
         dubin_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
-
         # Accumulate all samples
         all_samples = frenet_samples + dubin_samples
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
         best_path = all_samples[best_path_index]
         # min_cost = costs[best_path_index]
+        ffeasible = 0
+        for fs in frenet_samples:
+            if fs.collision_free and fs.kinematics_feasible:
+                ffeasible += 1
+
+        dfeasible = 0
+        for ds in dubin_samples:
+            if ds.kinematics_feasible and ds.collision_free:
+                dfeasible += 1
+
+        logger.warning(
+            "Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), dfeasible, len(dubin_samples)
+        )
 
         costs = np.sort(costs)
         # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
@@ -200,13 +218,14 @@ class Planner:
         # end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
         # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
         # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+        origin = best_path.origin.name
 
-        logger.warning("Replanning at %f", current_time)
         if not (best_path.kinematics_feasible and best_path.collision_free):
             logger.error("...Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
+            origin = Samplers.EMERGENCY.name
         else:
             best_path.compute_steering(self.sg.wheelbase)  # delta calculation if not filled yet, used by controller
             # ddelta = np.gradient(best_path.delta)
@@ -224,15 +243,14 @@ class Planner:
 
             agent_traj = best_agent_traj
             # self.replan_in_t = best_path.t[-1]
-            self.replan_in_t = 1.0
+            self.replan_in_t = 0.8
 
         if self.visualize:
             self.visualizer.plot_scenario(sim_obs)
-            print("Plotting all samples")
-            self.visualizer.plot_samples_without_background(best_path, all_samples)
+            self.visualizer.plot_samples_without_background(agent_traj, all_samples)
             self.visualizer.clear_viz()
 
-        logger.warning("Choosing %s sampled trajectory", best_path.origin.name)
+        logger.warning("Choosing %s sampled trajectory", origin)
 
         # print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
         self.plans.append(agent_traj)
