@@ -62,8 +62,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = True
-        self.visualize = True
+        self.visualize = False
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
@@ -173,7 +172,7 @@ class Planner:
         current_state = sim_obs.players[self.my_name].state
         current_time = float(sim_obs.time)
 
-        logger.warning("Replanning at %f", current_time)
+        # logger.warning("Replanning at %f", current_time)
         ref_progress = self.get_ref_progress(current_state)
         # logger.warning("Progress along reference: {:.2f}".format(ref_progress))
 
@@ -323,7 +322,7 @@ class Planner:
             )
             colliding_obstacle_state = sim_obs.players[collide_obs].state
             self.stopping_time = max(
-                current_state.vx - 5.0,
+                current_state.vx - 3.0,
                 current_state.vx
                 - colliding_obstacle_state.vx * np.cos(colliding_obstacle_state.psi - current_state.psi),
             ) / abs(self.sp.acc_limits[0])
@@ -342,10 +341,14 @@ class Planner:
         if current_time < self.agent_params.start_planning_time:  # runs till we get some context
             return 0.0, 0.0
 
-        if np.isclose(float(current_time - self.last_replan_time), self.replan_in_t) or (
-            self.min_ttc != np.inf
-            and self.min_ttc < self.stopping_time
-            and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
+        if (
+            np.isclose(float(current_time - self.last_replan_time), self.replan_in_t)
+            or (
+                self.min_ttc != np.inf
+                and self.min_ttc < self.stopping_time
+                and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
+            )
+            or self.controller.track_error > self.agent_params.max_track_error
         ):
             self.replan(sim_obs)
 

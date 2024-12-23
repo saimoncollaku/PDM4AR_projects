@@ -66,7 +66,7 @@ class KinematicsFilter:
         pure_acceleration = scalar_value(self.__trajectory.xdotdot, self.__trajectory.ydotdot)
         max_acceleration = np.max(pure_acceleration)
         min_acceleration = np.min(pure_acceleration)
-        if self.sp.acc_limits[0] > min_acceleration or self.sp.acc_limits[1] < max_acceleration:
+        if self.sp.acc_limits[0] > 0.8 * min_acceleration or self.sp.acc_limits[1] < 0.8 * max_acceleration:
             return False
         return True
 
@@ -87,7 +87,7 @@ class KinematicsFilter:
     def delta_filter(self):
         self.__trajectory.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(self.__trajectory.delta)
-        if np.max(np.abs(ddelta)) > 2 * self.sp.ddelta_max * self.__trajectory.dt:
+        if np.max(np.abs(ddelta)) > self.sp.ddelta_max * self.__trajectory.dt:
             return False
         return True
 
