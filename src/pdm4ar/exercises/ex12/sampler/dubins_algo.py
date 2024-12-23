@@ -388,6 +388,7 @@ class Dubins:
     ) -> tuple[List[SE2Transform], float]:
         pts_list = []
         old_point = self.get_next_point_on_curve(curve, curve.start_config, delta_angle=start_angle)
+        print("Inside interpolate_curve_points:", start_angle)
 
         angle = curve.arc_angle - start_angle
         direction = curve.type
@@ -418,6 +419,56 @@ class Dubins:
             left_distance = self.min_radius * left_angle
             return curve_pts, left_distance
 
+    def plot_trajectory(self, trajectory: list[SE2Transform], start_config: SE2Transform, end_config: SE2Transform):
+        x = [state.p[0] for state in trajectory]
+        y = [state.p[1] for state in trajectory]
+        psi = [state.theta for state in trajectory]
+        start_state = [start_config.p[0], start_config.p[1], start_config.theta]
+        end_state = [end_config.p[0], end_config.p[1], end_config.theta]
+
+        # Calculate the components of the arrow (unit vectors scaled for visualization)
+        arrow_length = 0.2  # Length of the arrows
+        u = [arrow_length * np.cos(angle) for angle in psi]  # X-component
+        v = [arrow_length * np.sin(angle) for angle in psi]  # Y-component
+
+        # Plot the states and heading
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, y, "bo-", label="Path")  # Path
+        plt.quiver(
+            x, y, u, v, angles="xy", scale_units="xy", scale=1, color="red", label="Heading"
+        )  # Arrows for heading
+
+        # Plot the starting state
+        start_arrow_u = arrow_length * np.cos(start_state[2])  # X-component of the starting arrow
+        start_arrow_v = arrow_length * np.sin(start_state[2])  # Y-component of the starting arrow
+        plt.scatter(start_state[0], start_state[1], color="green", s=100, label="Start", marker="*")  # Start marker
+        plt.quiver(
+            start_state[0],
+            start_state[1],
+            start_arrow_u,
+            start_arrow_v,
+            angles="xy",
+            scale_units="xy",
+            scale=1,
+            color="green",
+        )
+
+        # Plot the ending state
+        end_arrow_u = arrow_length * np.cos(end_state[2])  # X-component of the ending arrow
+        end_arrow_v = arrow_length * np.sin(end_state[2])  # Y-component of the ending arrow
+        plt.scatter(end_state[0], end_state[1], color="orange", s=100, label="End", marker="s")  # End marker
+        plt.quiver(
+            end_state[0], end_state[1], end_arrow_u, end_arrow_v, angles="xy", scale_units="xy", scale=1, color="orange"
+        )
+
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.title("Path with Heading Angles")
+        plt.legend()
+        plt.axis("equal")  # Ensure equal scaling for x and y axes
+        plt.grid()
+        plt.savefig("dubins.png")
+
 
 class DubinsTest(unittest.TestCase):
     dubins: Dubins
@@ -435,28 +486,7 @@ class DubinsTest(unittest.TestCase):
         start_config = SE2Transform([-26.27269412470485, 8.787346780714294], -0.011495208045596282)
         end_config = SE2Transform([-27.132346369790178, 6.537920517155902], 0.0032153572)
         trajectory = self.dubins.compute_path(start_config, end_config, self.step_length)
-        x = [state.p[0] for state in trajectory]
-        y = [state.p[1] for state in trajectory]
-        psi = [state.theta for state in trajectory]
-
-        # Calculate the components of the arrow (unit vectors scaled for visualization)
-        arrow_length = 0.2  # Length of the arrows
-        u = [arrow_length * np.cos(angle) for angle in psi]  # X-component
-        v = [arrow_length * np.sin(angle) for angle in psi]  # Y-component
-
-        # Plot the states and heading
-        plt.figure(figsize=(8, 6))
-        plt.plot(x, y, "bo-", label="Path")  # Path
-        plt.quiver(
-            x, y, u, v, angles="xy", scale_units="xy", scale=1, color="red", label="Heading"
-        )  # Arrows for heading
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.title("Path with Heading Angles")
-        plt.legend()
-        plt.axis("equal")  # Ensure equal scaling for x and y axes
-        plt.grid()
-        plt.savefig("dubins.png")
+        self.dubins.plot_trajectory(trajectory, start_config, end_config)
 
 
 if __name__ == "__main__":

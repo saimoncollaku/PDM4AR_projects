@@ -28,7 +28,7 @@ def main():
     # 3- define the sampler
     sampler = FrenetSampler(1, 50, 5, 5, 1, c_speed, c_d, c_d_d, c_d_dd, s0)
     # 4-  create array of path samples
-    fp = sampler.get_paths_merge()
+    fp = sampler.get_paths()
     # 5- get the best fp index (here i assigned 5)
     frenet_points = np.column_stack((fp[5].s, fp[5].d))
     path_points = spline_ref.to_cartesian(frenet_points)

@@ -14,7 +14,7 @@ from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.sim.models.vehicle import VehicleState
 
-from pdm4ar.exercises.ex12.sampler.frenet_sampler import Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 
 
@@ -292,6 +292,7 @@ class Cost:
     def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: list) -> None:
         self.name = init_obs.my_name
         assert isinstance(init_obs.model_geometry, VehicleGeometry)
+        assert isinstance(init_obs.model_params, VehicleParameters)
 
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
@@ -402,6 +403,8 @@ class Cost:
             if player != self.name:
                 obs_box = self.__observations.players[player].occupancy
                 obs_state = self.__observations.players[player].state
+                assert isinstance(obs_box, Polygon)
+                assert isinstance(obs_state, VehicleState)
                 obx, oby = obs_box.exterior.xy
                 obs_head = np.array([np.cos(obs_state.psi), np.sin(obs_state.psi)])
                 obs_perp = np.array([-np.sin(obs_state.psi), np.cos(obs_state.psi)])

@@ -2,7 +2,7 @@ from typing import Tuple
 import numpy as np
 from scipy.interpolate import splprep, splev
 
-from pdm4ar.exercises.ex12.sampler.frenet_sampler import Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample
 
 
 class SplineReference:
@@ -69,8 +69,11 @@ class SplineReference:
 
         return np.array(frenet_points)
 
-    def get_xy(self, sample: list[tuple[float, float]]):
-        cartesian_points = np.zeros((len(sample), 2))
+    def get_xy(self, coordinate: list[tuple[float, float]]):
+        """
+        From fresnet coordinate [(s, d)...] to [(x, y)...]
+        """
+        cartesian_points = np.zeros((len(coordinate), 2))
 
         # Precompute cumulative lengths of the reference trajectory
         cumulative_lengths = np.cumsum(np.sqrt(np.diff(self.x) ** 2 + np.diff(self.y) ** 2))
@@ -80,7 +83,7 @@ class SplineReference:
         dx = np.gradient(self.x)
         dy = np.gradient(self.y)
 
-        for i, (s, d) in enumerate(sample):
+        for i, (s, d) in enumerate(coordinate):
             # Find the closest point on the reference trajectory for the given s
             idx = np.argmin(np.abs(cumulative_lengths - s))
             if idx < len(self.x) - 1:
@@ -105,44 +108,10 @@ class SplineReference:
 
         Args:
             sample (Sample): A single Sample object containing Frenet trajectory.
+        Changes in place
         """
-        vx_values = np.zeros(len(sample.t))
-        theta_values = np.zeros(len(sample.t))
-        kappa_values = np.zeros(len(sample.t))
 
         cartesian_points = self.get_xy(list(zip(sample.s, sample.d)))
-
-        # Compute curvature and orientation for the Cartesian points
-        cart_dx = np.gradient(cartesian_points[:, 0])
-        cart_dy = np.gradient(cartesian_points[:, 1])
-        cart_d2x = np.gradient(cart_dx)
-        cart_d2y = np.gradient(cart_dy)
-
-        for i in range(len(sample.t)):
-            # Compute curvature (kappa) using Cartesian derivatives
-            num = np.abs(cart_dx[i] * cart_d2y[i] - cart_dy[i] * cart_d2x[i])
-            den = (cart_dx[i] ** 2 + cart_dy[i] ** 2) ** (3 / 2)
-            kappa = num / den if den != 0 else 0.0
-            kappa_values[i] = kappa
-
-            # Compute longitudinal velocity (v_x)
-            vx = np.sqrt(((1 - kappa * sample.d[i]) ** 2) * sample.s_d[i] ** 2 + sample.d_d[i] ** 2)
-            vx_values[i] = vx
-
-            # Compute orientation (theta)
-            theta_c = np.arctan2(cart_dy[i], cart_dx[i])  # Direction of Cartesian trajectory
-            delta_theta = np.arctan2(sample.d_d[i], sample.s_d[i] * (1 - kappa * sample.d[i]))  # Aθ
-            theta = delta_theta + theta_c
-            theta_values[i] = theta
-
-        cart_dx = np.gradient(cartesian_points[:, 0])
-        cart_dy = np.gradient(cartesian_points[:, 1])
-
-        # Compute orientation (theta) for each point
         sample.x = cartesian_points[:, 0]
         sample.y = cartesian_points[:, 1]
-        sample.psi = np.arctan2(cart_dy, cart_dx)
-        sample.vx = vx_values
-        sample.kappa = kappa_values
-
-        return
+        sample.store_vx_theta()

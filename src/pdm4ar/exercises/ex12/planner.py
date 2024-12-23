@@ -6,8 +6,8 @@ from dg_commons import PlayerName
 from dg_commons.sim.goals import RefLaneGoal
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.planning import Trajectory
-from dg_commons.sim.models.vehicle import VehicleState
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
+from dg_commons.sim.models.vehicle import VehicleState
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 
 from pdm4ar.exercises.ex12.visualization import Visualizer
@@ -16,7 +16,9 @@ from pdm4ar.exercises.ex12.params import Pdm4arAgentParams
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 from pdm4ar.exercises.ex12.trajectory_evalulator import Evaluator
 from pdm4ar.exercises.ex12.controller import BasicController as Controller
-from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler, Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample
+from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
+from pdm4ar.exercises.ex12.sampler.dubins_sampler import DubinSampler
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref, get_lanelet_distances
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,8 @@ class Planner:
 
     controller: Controller
     evaluator: Evaluator
-    sampler: FrenetSampler
+    fsampler: FrenetSampler
+    dsampler: DubinSampler
     cmd_acc: float
     cmd_ddelta: float
     road_distances: tuple[float, float, float]
@@ -73,7 +76,7 @@ class Planner:
         reference_points, target_lanelet_id = obtain_complete_ref(goal, lanelet_network)
         self.road_distances = get_lanelet_distances(lanelet_network, target_lanelet_id)
         self.spline_ref = SplineReference(reference_points, resolution=int(1e5))
-        self.reference = np.column_stack((self.spline_ref.x, self.spline_ref.y))[::100]  # TODO Magic
+        # self.reference = np.column_stack((self.spline_ref.x, self.spline_ref.y))[::100]  # TODO Magic
 
         self.controller = Controller(self.sp, self.sg, self.visualize)
         self.evaluator = Evaluator(init_obs, self.spline_ref, self.sp, self.sg, self.visualize)
@@ -101,7 +104,7 @@ class Planner:
             road_l = 0
             road_r = road_generic * round(abs(d0) / road_generic)
 
-        self.sampler = FrenetSampler(
+        self.fsampler = FrenetSampler(
             min_speed=self.agent_params.min_sample_speed,
             max_speed=self.agent_params.max_sample_speed,
             road_width_l=road_l,
@@ -111,6 +114,23 @@ class Planner:
             max_t=self.agent_params.max_sample_time,
             min_t=self.agent_params.min_sample_time,
             v_res=self.agent_params.sdot_sample_space,
+        )
+
+        self.dsampler = DubinSampler(
+            min_speed=self.agent_params.min_sample_speed,
+            max_speed=self.agent_params.max_sample_speed,
+            step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
+            road_width_l=road_l,
+            road_width_r=road_r,
+            s_max=10,
+            sample_ds=0.5,
+            sample_dd=road_generic,
+            lane_psi=self.lane_psi,
+            wheel_base=self.sg.wheelbase,
+            max_steering_angle=self.sp.delta_max,
+            max_acceleration=self.sp.acc_limits[1],
+            dt=self.agent_params.dt,
+            spline_ref=self.spline_ref,
         )
 
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
@@ -124,7 +144,7 @@ class Planner:
         states = [init_state]
         for step in range(1, time_steps):
             t = dt * step
-            v = max(init_state.vx + max_deceleration * t, self.sampler.min_v)
+            v = max(init_state.vx + max_deceleration * t, self.fsampler.min_v)
             vx = v * np.cos(self.lane_psi)
             vy = v * np.sin(self.lane_psi)
             x, y = (vx**2 - ux**2) / (2 * ax) + init_state.x, (vy**2 - uy**2) / (2 * ay) + init_state.y
@@ -146,6 +166,7 @@ class Planner:
         current_time = float(sim_obs.time)
         assert isinstance(current_state, VehicleState)
 
+        # Sample from Frenet Sampler
         current_cart = np.column_stack((current_state.x, current_state.y))
         current_frenet = self.spline_ref.to_frenet(current_cart)
         d0 = current_frenet[0][1]
@@ -155,13 +176,16 @@ class Planner:
         sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
         ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
 
-        all_samples = self.sampler.get_paths_merge(s0, sdot, sdotdot, d0, ddot, ddotdot)
-        # logger.warning("Sampled {} paths".format(len(all_samples)))
+        all_samples = self.fsampler.get_paths(s0, sdot, sdotdot, d0, ddot, ddotdot)
+        logger.warning("Sampled %d paths", (len(all_samples)))
+
+        # Sample from Dubin Sampler
+        more_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
+        all_samples.extend(more_samples)
 
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
-        # min_cost = costs[best_path_index]
         best_path = all_samples[best_path_index]
-        # best_path_index, min_cost = self.check_paths(all_samples)
+        # min_cost = costs[best_path_index]
 
         costs = np.sort(costs)
         # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
@@ -177,15 +201,14 @@ class Planner:
         # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
         # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
 
+        logger.warning("Replanning at %f", current_time)
         if not (best_path.kinematics_feasible and best_path.collision_free):
-            logger.error("Entering emergency trajectory")
+            logger.error("...Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
         else:
-            logger.warning("Replanning at {}".format(current_time))
-
-            best_path.compute_steering(self.sg.wheelbase)
+            best_path.compute_steering(self.sg.wheelbase)  # delta calculation if not filled yet, used by controller
             # ddelta = np.gradient(best_path.delta)
             # logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
 
@@ -203,7 +226,7 @@ class Planner:
             # self.replan_in_t = best_path.t[-1]
             self.replan_in_t = 1.0
 
-        print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
+        # print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
         self.plans.append(agent_traj)
         # self.plans.append(best_agent_traj)
         self.controller.set_reference(agent_traj)

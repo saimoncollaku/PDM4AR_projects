@@ -1,95 +1,13 @@
 import copy
-
+import logging
 import numpy as np
 
 from pdm4ar.exercises.ex12.sampler.polynomials import Quartic, Quintic
+from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
 
 
-class Sample:
-    dt: float
-    T: int
-    x: np.ndarray
-    xdot: np.ndarray
-    xdotdot: np.ndarray
-    xdotdotdot: np.ndarray
-    y: np.ndarray
-    ydot: np.ndarray
-    ydotdot: np.ndarray
-    ydotdotdot: np.ndarray
-    kappa: np.ndarray
-    kappadot: np.ndarray
-    vx: np.ndarray
-    psi: np.ndarray
-    delta: np.ndarray
-
-    t: np.ndarray
-    kinematics_feasible: bool = False
-    kinematics_feasible_dict: dict[str, bool]
-    collision_free: bool = False
-    cost: dict
-
-    def __init__(self):
-        # Lateral
-        self.d = []
-        self.d_d = []
-        self.d_dd = []
-        self.d_ddd = []
-
-        # Longitudinal
-        self.s = []
-        self.s_d = []
-        self.s_dd = []
-        self.s_ddd = []
-
-        self.x = None  # type: ignore
-        self.y = None  # type: ignore
-        self.vx = None  # type: ignore
-        self.psi = None  # type: ignore
-        self.delta = None  # type: ignore
-        self.kappa = None  # type: ignore
-
-        self.kinematics_feasible = False
-        self.collision_free = False
-        self.cost = {}
-
-    def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):
-        cart_grad: np.ndarray = np.gradient(cartesian_points, axis=0)
-        cartesian_vel = np.zeros((len(time_grad), 2))
-        cartesian_vel[:, 0] = cart_grad[:, 0] / time_grad
-        cartesian_vel[:, 1] = cart_grad[:, 1] / time_grad
-        return cartesian_vel
-
-    def get_xy_dotdot(self, cartesian_vel: np.ndarray, time_grad: np.ndarray):
-        return self.get_xy_dot(cartesian_vel, time_grad)
-
-    def get_xy_dotdotdot(self, cartesian_acc: np.ndarray, time_grad: np.ndarray):
-        return self.get_xy_dot(cartesian_acc, time_grad)
-
-    def get_kappadot(self, time_grad: np.ndarray):
-        kappa_grad: np.ndarray = np.gradient(self.kappa)
-        return kappa_grad / time_grad
-
-    def compute_steering(
-        self,
-        wheelbase,
-    ):
-        if not isinstance(self.delta, np.ndarray):
-            dpsi = np.gradient(self.psi)
-            self.delta = np.arctan2(dpsi / self.dt, self.vx / wheelbase)
-
-    def compute_derivatives(self):
-        time_grad = np.gradient(np.array(self.t))
-        cartesian_points = np.stack([self.x, self.y], axis=1)
-        cartesian_vel = self.get_xy_dot(cartesian_points, time_grad)
-        cartesian_acc = self.get_xy_dotdot(cartesian_vel, time_grad)
-        cartesian_jerk = self.get_xy_dotdotdot(cartesian_acc, time_grad)
-        self.xdot = cartesian_vel[:, 0]
-        self.xdotdot = cartesian_acc[:, 0]
-        self.xdotdotdot = cartesian_jerk[:, 0]
-        self.ydot = cartesian_vel[:, 1]
-        self.ydotdot = cartesian_acc[:, 1]
-        self.ydotdotdot = cartesian_jerk[:, 1]
-        self.kappadot = self.get_kappadot(time_grad)
+logger = logging.getLogger(__name__)
+logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
 
 
 class FrenetSampler:
@@ -118,37 +36,48 @@ class FrenetSampler:
         self.max_t = max_t
         self.min_t = min_t
 
-    def get_paths_merge(self, s0, sdot, sdotdot, d0, ddot, ddotdot) -> list[Sample]:
+    def get_paths(self, s0, sdot, sdotdot, d0, ddot, ddotdot) -> list[Sample]:
         last_samples = []
 
+        all_final_d = np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res)
+        all_final_t = np.arange(self.min_t, self.max_t, self.dt)
+        all_final_v = np.arange(self.min_v, self.max_v, self.v_res)
+        num_ts, num_ds, num_vs = len(all_final_t), len(all_final_d), len(all_final_v)
+
+        num_total = num_ts * num_ds * num_vs
+        logger.warning(
+            "Generating (%d, %d, %d) t, d, v values, totaling %d trajectories", num_ts, num_ds, num_vs, num_total
+        )
+
         # Lateral sampling
-        for di in np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res):
+        for di in all_final_d:
 
             # Time sampling
-            for ti in np.arange(self.min_t, self.max_t, self.dt):
-                fp = Sample()
+            for ti in all_final_t:
+                sample = Sample()
+                sample.origin = Samplers.FRENET
 
                 lat_qp = Quintic(d0, ddot, ddotdot, di, 0.0, 0.0, ti)
 
-                fp.dt = self.dt
-                fp.t = np.arange(0.0, ti, self.dt)
-                fp.d = [lat_qp.calc_point(t) for t in fp.t]
-                fp.d_d = [lat_qp.calc_first_derivative(t) for t in fp.t]
-                fp.d_dd = [lat_qp.calc_second_derivative(t) for t in fp.t]
-                fp.d_ddd = [lat_qp.calc_third_derivative(t) for t in fp.t]
+                sample.dt = self.dt
+                sample.t = np.arange(0.0, ti, self.dt)
+                sample.d = np.array([lat_qp.calc_point(t) for t in sample.t])
+                sample.ddot = np.array([lat_qp.calc_first_derivative(t) for t in sample.t])
+                sample.ddotdot = np.array([lat_qp.calc_second_derivative(t) for t in sample.t])
+                sample.ddotdotdot = np.array([lat_qp.calc_third_derivative(t) for t in sample.t])
 
                 # Longitudinal sampling
-                for vi in np.arange(self.min_v, self.max_v, self.v_res):
-                    tfp = copy.deepcopy(fp)
+                for vi in all_final_v:
+                    copied_sample = copy.deepcopy(sample)
                     lon_qp = Quartic(s0, sdot, sdotdot, vi, 0.0, ti)
 
-                    tfp.s = [lon_qp.calc_point(t) for t in fp.t]
-                    tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
-                    tfp.s_dd = [lon_qp.calc_second_derivative(t) for t in fp.t]
-                    tfp.s_ddd = [lon_qp.calc_third_derivative(t) for t in fp.t]
+                    copied_sample.s = np.array([lon_qp.calc_point(t) for t in sample.t])
+                    copied_sample.sdot = np.array([lon_qp.calc_first_derivative(t) for t in sample.t])
+                    copied_sample.sdotdot = np.array([lon_qp.calc_second_derivative(t) for t in sample.t])
+                    copied_sample.sdotdotdot = np.array([lon_qp.calc_third_derivative(t) for t in sample.t])
 
-                    tfp.T = len(tfp.t)
+                    copied_sample.T = len(copied_sample.t)
 
-                    last_samples.append(tfp)
+                    last_samples.append(copied_sample)
 
         return last_samples
