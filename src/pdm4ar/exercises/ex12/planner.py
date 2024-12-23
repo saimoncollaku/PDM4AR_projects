@@ -22,8 +22,8 @@ from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
 from pdm4ar.exercises.ex12.sampler.dubins_sampler import DubinSampler
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref, get_lanelet_distances
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
 
 
 class Planner:
@@ -63,7 +63,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = True
+        self.visualize = False
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
@@ -182,9 +182,9 @@ class Planner:
         if (
             self.min_ttc != np.inf
             and self.min_ttc < self.stopping_time
-            and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
+            # and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
         ):
-            logger.error("No feasible paths, Entering emergency trajectory")
+            # logger.error("No feasible paths, Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
@@ -226,7 +226,7 @@ class Planner:
         #         dfeasible += 1
 
         # "Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), dfeasible, len(dubin_samples)
-        logger.warning("Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), 0, 0)
+        # logger.warning("Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), 0, 0)
 
         costs = np.sort(costs)
         # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
@@ -244,12 +244,12 @@ class Planner:
         origin = best_path.origin.name
 
         if self.ref_progress <= 0.9 and not (best_path.kinematics_feasible and best_path.collision_free):
-            logger.error("Entering emergency trajectory")
+            # logger.error("Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
         else:
-            logger.warning("Replanning at {}".format(current_time))
+            # logger.warning("Replanning at {}".format(current_time))
 
             best_path.compute_steering(self.sg.wheelbase)
             # ddelta = np.gradient(best_path.delta)
@@ -276,7 +276,7 @@ class Planner:
             self.visualizer.plot_samples_without_background(agent_traj, all_samples)
             self.visualizer.clear_viz()
 
-        logger.warning("Choosing %s sampled trajectory", origin)
+        # logger.warning("Choosing %s sampled trajectory", origin)
 
         self.plans.append(agent_traj)
         # self.plans.append(best_agent_traj)
@@ -317,11 +317,11 @@ class Planner:
 
         self.min_ttc, collide_obs = self.get_ttc(sim_obs)
         if collide_obs is not None:
-            logger.error(
-                "Collision with {} in {:.2f} s, stopping time {:.2f}".format(
-                    collide_obs, self.min_ttc, self.stopping_time
-                )
-            )
+            # logger.error(
+            #     "Collision with {} in {:.2f} s, stopping time {:.2f}".format(
+            #         collide_obs, self.min_ttc, self.stopping_time
+            #     )
+            # )
             colliding_obstacle_state = sim_obs.players[collide_obs].state
             self.stopping_time = max(
                 current_state.vx - 3.0,
@@ -348,7 +348,7 @@ class Planner:
             or (
                 self.min_ttc != np.inf
                 and self.min_ttc < self.stopping_time
-                and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
+                # and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
             )
             or self.controller.track_error > self.agent_params.max_track_error
         ):

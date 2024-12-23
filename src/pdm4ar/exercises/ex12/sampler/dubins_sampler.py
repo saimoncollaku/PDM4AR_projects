@@ -8,8 +8,8 @@ from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 from pdm4ar.exercises.ex12.sampler.sample import Samplers
 
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
 
 
 class DubinSampler:
@@ -37,7 +37,7 @@ class DubinSampler:
 
         self.min_v = min_speed
         self.v_max_along_curve = np.sqrt(max_acceleration * wheel_base / np.tan(max_steering_angle))
-        logger.warning("Maximum velocity to satisfy acceleration on curves: %f", self.v_max_along_curve)
+        # logger.warning("Maximum velocity to satisfy acceleration on curves: %f", self.v_max_along_curve)
         self.max_v = min(self.v_max_along_curve, max_speed)
         self.step_v = step_speed
         self.dt = dt
@@ -61,19 +61,19 @@ class DubinSampler:
         # final_s can only be beyond a diameter of minimum radius to avoid U-turns.
         num_ss, num_ds, num_vv = len(all_final_s), len(all_final_d), len(all_traj_v)
         num_total = num_ss * num_ds * num_vv
-        logger.warning(
-            "Generating (%d, %d, %d) s and d values, totaling %d trajectories", num_ss, num_ds, num_vv, num_total
-        )
+        # logger.warning(
+        #     "Generating (%d, %d, %d) s and d values, totaling %d trajectories", num_ss, num_ds, num_vv, num_total
+        # )
 
         # Can vary trajectory velocity
         trajectory_velocity = v0
-        logger.warning("Using trajectory generation velocity %f", trajectory_velocity)
+        # logger.warning("Using trajectory generation velocity %f", trajectory_velocity)
         # if trajectory_velocity > self.max_v or trajectory_velocity < self.min_v:
-        logger.error("Velocity bounds: [%f, %f]", self.min_v, max_v)
+        # logger.error("Velocity bounds: [%f, %f]", self.min_v, max_v)
 
         for trajectory_velocity in all_traj_v:
             sample_distance = trajectory_velocity * self.dt
-            logger.warning("Sample minimum distance %f", sample_distance)
+            # logger.warning("Sample minimum distance %f", sample_distance)
             for df in all_final_d:
                 for sf in all_final_s:
 

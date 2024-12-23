@@ -12,8 +12,8 @@ from pdm4ar.exercises.ex12.planner import Planner
 
 from pdm4ar.exercises.ex12.params import Pdm4arAgentParams
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
 
 
 class Pdm4arAgent(Agent):
@@ -40,7 +40,7 @@ class Pdm4arAgent(Agent):
         Do not modify the signature of this method.
         """
         self.name = init_obs.my_name
-        logger.warning("Starting new scenario")
+        # logger.warning("Starting new scenario")
         assert isinstance(init_obs.model_geometry, VehicleGeometry)
         assert isinstance(init_obs.model_params, VehicleParameters)
         self.sg = init_obs.model_geometry

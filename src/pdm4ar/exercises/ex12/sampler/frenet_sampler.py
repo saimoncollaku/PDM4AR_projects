@@ -6,8 +6,8 @@ from pdm4ar.exercises.ex12.sampler.polynomials import Quartic, Quintic
 from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
 
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(encoding="utf-8", level=logging.WARNING, format="%(levelname)s %(name)s:\t%(message)s")
 
 
 class FrenetSampler:
@@ -46,9 +46,9 @@ class FrenetSampler:
         num_ts, num_ds, num_vs = len(all_final_t), len(all_final_d), len(all_final_v)
 
         num_total = num_ts * num_ds * num_vs
-        logger.warning(
-            "Generating (%d, %d, %d) t, d, v values, totaling %d trajectories", num_ts, num_ds, num_vs, num_total
-        )
+        # logger.warning(
+        #     "Generating (%d, %d, %d) t, d, v values, totaling %d trajectories", num_ts, num_ds, num_vs, num_total
+        # )
 
         # Lateral sampling
         for di in all_final_d:
