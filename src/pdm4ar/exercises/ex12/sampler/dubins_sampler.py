@@ -79,7 +79,7 @@ class DubinSampler:
                 init_config = SE2Transform(init_state.tolist(), psi0)
                 final_config = SE2Transform(final_state.tolist(), self.lane_psi)
                 waypoints = self.dubins_generator.compute_path(init_config, final_config, sample_distance)
-                self.dubins_generator.plot_trajectory(waypoints, init_config, final_config)
+                # self.dubins_generator.plot_trajectory(waypoints, init_config, final_config)
 
                 sample = Sample()
                 sample.dt = self.dt

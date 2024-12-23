@@ -24,6 +24,7 @@ from pdm4ar.exercises.ex12.sampler.dubins_structures import (
     Path,
     mod_2_pi,
 )
+from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
 
 
 class WrongRadiusError(ValueError):
@@ -423,20 +424,64 @@ class Dubins:
             left_distance = self.min_radius * left_angle
             return curve_pts, left_distance
 
-    def plot_trajectory(self, trajectory: list[SE2Transform], start_config: SE2Transform, end_config: SE2Transform):
+    def plot_trajectory(
+        self,
+        trajectory: list[SE2Transform],
+        start_config: SE2Transform,
+        end_config: SE2Transform,
+        path="../../out/12/dubins.png",
+    ):
         x = [state.p[0] for state in trajectory]
         y = [state.p[1] for state in trajectory]
         psi = [state.theta for state in trajectory]
         start_state = [start_config.p[0], start_config.p[1], start_config.theta]
         end_state = [end_config.p[0], end_config.p[1], end_config.theta]
+        Dubins.plot_any_trajectory(x, y, psi, start_state, end_state, path)
 
+    @staticmethod
+    def plot_any_trajectory(
+        x: Sequence,
+        y: Sequence,
+        psi: Sequence,
+        start_state: Sequence,
+        end_state: Sequence,
+        path: str,
+        trajectories: list[Sample] = [],
+    ):
+        plt.figure(figsize=(8, 6))
+        num_non_feasible = 0
+        num_frenet = 0
+        num_dubin = 0
+        for traj in trajectories:
+            if traj.cost == np.inf:
+                choose = np.random.random(1)
+                if choose < 0.5:
+                    continue
+                num_non_feasible += 1
+                plt.plot(traj.x, traj.y, color="grey", linestyle="-", alpha=0.7)
+            else:
+                if traj.origin == Samplers.DUBINS:
+                    choose = np.random.random(1)
+                    if choose < 0.5:
+                        continue
+                    num_dubin += 1
+                    plt.plot(traj.x, traj.y, color="brown", linestyle="-", alpha=0.7)
+                    plt.scatter(traj.x[-1], traj.y[-1], color="black", alpha=0.2, s=2)
+                else:
+                    choose = np.random.random(1)
+                    if choose < 0.5:
+                        continue
+                    num_frenet += 1
+                    plt.plot(traj.x, traj.y, color="pink", linestyle="-", alpha=0.7)
+                    plt.scatter(traj.x[-1], traj.y[-1], color="purple", alpha=0.2, s=2)
+
+        print(f"Plotting non_feasible: {num_non_feasible}, and in feasible: frenet: {num_frenet}, dubin: {num_dubin}")
         # Calculate the components of the arrow (unit vectors scaled for visualization)
         arrow_length = 0.2  # Length of the arrows
         u = [arrow_length * np.cos(angle) for angle in psi]  # X-component
         v = [arrow_length * np.sin(angle) for angle in psi]  # Y-component
 
         # Plot the states and heading
-        plt.figure(figsize=(8, 6))
         plt.plot(x, y, "bo-", label="Path")  # Path
         plt.quiver(
             x, y, u, v, angles="xy", scale_units="xy", scale=1, color="red", label="Heading"
@@ -471,7 +516,7 @@ class Dubins:
         plt.legend()
         plt.axis("equal")  # Ensure equal scaling for x and y axes
         plt.grid()
-        plt.savefig("dubins.png")
+        plt.savefig(path)
         plt.close()
 
 

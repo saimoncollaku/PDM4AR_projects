@@ -122,12 +122,12 @@ class Planner:
             step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
             road_width_l=road_l,
             road_width_r=road_r,
-            s_max=10,
-            sample_ds=0.5,
+            s_max=4,
+            sample_ds=0.25,
             sample_dd=road_generic,
             lane_psi=self.lane_psi,
             wheel_base=self.sg.wheelbase,
-            max_steering_angle=self.sp.delta_max,
+            max_steering_angle=self.sp.delta_max / 4,
             max_acceleration=self.sp.acc_limits[1],
             dt=self.agent_params.dt,
             spline_ref=self.spline_ref,
@@ -176,14 +176,13 @@ class Planner:
         sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
         ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
 
-        all_samples = self.fsampler.get_paths(s0, sdot, sdotdot, d0, ddot, ddotdot)
-        logger.warning("Sampled %d paths", (len(all_samples)))
+        frenet_samples = self.fsampler.get_paths(s0, sdot, sdotdot, d0, ddot, ddotdot)
 
         # Sample from Dubin Sampler
-        more_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
-        all_samples.extend(more_samples)
-        self.visualizer.plot_samples(more_samples, self.sg.wheelbase, "dubins")
+        dubin_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
 
+        # Accumulate all samples
+        all_samples = frenet_samples + dubin_samples
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
         best_path = all_samples[best_path_index]
         # min_cost = costs[best_path_index]
@@ -226,6 +225,13 @@ class Planner:
             agent_traj = best_agent_traj
             # self.replan_in_t = best_path.t[-1]
             self.replan_in_t = 1.0
+
+        if self.visualize:
+            self.visualizer.plot_scenario(sim_obs)
+            print("Plotting all samples")
+            self.visualizer.plot_samples_without_background(best_path, all_samples)
+            self.visualizer.clear_viz()
+
         logger.warning("Choosing %s sampled trajectory", best_path.origin.name)
 
         # print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
@@ -260,12 +266,7 @@ class Planner:
             return 0.0, 0.0
 
         if np.isclose(float(current_time - self.last_replan_time), self.replan_in_t):
-            all_samples = self.replan(sim_obs)
-
-            if self.visualize:
-                self.visualizer.plot_scenario(sim_obs)
-                self.visualizer.plot_samples(all_samples, self.sg.wheelbase, len(self.plans))
-                self.visualizer.clear_viz()
+            self.replan(sim_obs)
 
         if self.visualize:
             self.visualizer.plot_scenario(sim_obs)
