@@ -124,22 +124,22 @@ class Planner:
             v_res=self.agent_params.sdot_sample_space,
         )
 
-        self.dsampler = DubinSampler(
-            min_speed=self.agent_params.lower_limit_v,
-            max_speed=self.agent_params.max_sample_speed,
-            step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
-            road_width_l=road_l,
-            road_width_r=road_r,
-            s_max=10,
-            sample_ds=0.5,
-            sample_dd=road_generic,
-            lane_psi=self.lane_psi,
-            wheel_base=self.sg.wheelbase,
-            max_steering_angle=self.sp.delta_max,
-            max_acceleration=self.sp.acc_limits[1],
-            dt=self.agent_params.dt,
-            spline_ref=self.spline_ref,
-        )
+        # self.dsampler = DubinSampler(
+        #     min_speed=self.agent_params.lower_limit_v,
+        #     max_speed=self.agent_params.max_sample_speed,
+        #     step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
+        #     road_width_l=road_l,
+        #     road_width_r=road_r,
+        #     s_max=10,
+        #     sample_ds=0.5,
+        #     sample_dd=road_generic,
+        #     lane_psi=self.lane_psi,
+        #     wheel_base=self.sg.wheelbase,
+        #     max_steering_angle=self.sp.delta_max,
+        #     max_acceleration=self.sp.acc_limits[1],
+        #     dt=self.agent_params.dt,
+        #     spline_ref=self.spline_ref,
+        # )
 
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
         dt = self.agent_params.dt
@@ -220,14 +220,13 @@ class Planner:
             if fs.collision_free and fs.kinematics_feasible:
                 ffeasible += 1
 
-        dfeasible = 0
-        for ds in dubin_samples:
-            if ds.kinematics_feasible and ds.collision_free:
-                dfeasible += 1
+        # dfeasible = 0
+        # for ds in dubin_samples:
+        #     if ds.kinematics_feasible and ds.collision_free:
+        #         dfeasible += 1
 
-        logger.warning(
-            "Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), dfeasible, len(dubin_samples)
-        )
+        # "Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), dfeasible, len(dubin_samples)
+        logger.warning("Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), 0, 0)
 
         costs = np.sort(costs)
         # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
@@ -322,7 +321,12 @@ class Planner:
                     collide_obs, self.min_ttc, self.stopping_time
                 )
             )
-            self.stopping_time = (current_state.vx - 5.0) / abs(self.sp.acc_limits[0])
+            colliding_obstacle_state = sim_obs.players[collide_obs].state
+            self.stopping_time = max(
+                current_state.vx - 5.0,
+                current_state.vx
+                - colliding_obstacle_state.vx * np.cos(colliding_obstacle_state.psi - current_state.psi),
+            ) / abs(self.sp.acc_limits[0])
 
         # if self.min_ttc < self.replan_in_t:
         # logger.warning("Collision detected, replanning")
