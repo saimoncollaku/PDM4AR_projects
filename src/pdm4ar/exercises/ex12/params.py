@@ -8,7 +8,7 @@ class Pdm4arAgentParams:
     max_sample_time: float = 6.0
     min_sample_time: float = 2.0
     sample_delta_time: float = 0.5
-    min_sample_speed: float = 2.0
+    min_sample_speed: float = 5.0
     max_sample_speed: float = 20.0
     sdot_sample_space: float = 0.5  # sample distances of sdot values
     emergency_timesteps: int = 5
@@ -17,5 +17,5 @@ class Pdm4arAgentParams:
     replan_del_t: float = 1.0
     max_min_ttc: float = 0.8
     max_track_error: float = 2.0
-    eval_weights = [0.1, 2.0, 2.5, 0.005, 0.01]
+    eval_weights = [0.1, 5.0, 2.0, 0.005, 0.01]
     lower_limit_v = 2.5  # this is used for Dubin's and emergency

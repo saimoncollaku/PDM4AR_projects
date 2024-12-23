@@ -117,7 +117,7 @@ class Planner:
             max_speed=self.agent_params.max_sample_speed,
             road_width_l=road_l,
             road_width_r=road_r,
-            road_res=road_generic / 2,
+            road_res=road_generic,
             del_t=self.agent_params.sample_delta_time,
             max_t=self.agent_params.max_sample_time,
             min_t=self.agent_params.min_sample_time,
