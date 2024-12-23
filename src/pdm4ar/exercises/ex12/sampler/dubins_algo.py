@@ -1,11 +1,16 @@
 from collections.abc import Sequence
 from enum import Enum
+from math import floor
 from typing import Optional, Union
+import unittest
 
 from typing import List
 from dg_commons import SE2Transform
 import numpy as np
+import matplotlib.pyplot as plt
 
+from dg_commons.sim.models.vehicle_structures import VehicleGeometry
+from dg_commons.sim.models.vehicle_utils import VehicleParameters
 from pdm4ar.exercises.ex12.sampler.dubins_structures import (
     DubinsParam,
     ABC,
@@ -15,6 +20,7 @@ from pdm4ar.exercises.ex12.sampler.dubins_structures import (
     Curve,
     DubinsSegmentType,
     Line,
+    Segment,
     Path,
     mod_2_pi,
 )
@@ -36,17 +42,12 @@ class BeyondListError(IndexError):
     pass
 
 
-class PathPlanner(ABC):
-    @abstractmethod
-    def compute_path(self, start: SE2Transform, end: SE2Transform) -> Sequence[SE2Transform]:
-        pass
+class Dubins:
+    def __init__(self, wheel_base: float, max_steering_angle: float):
+        self.min_radius = self.calculate_car_turning_radius(wheel_base, max_steering_angle)
+        assert self.min_radius > 0, "Minimum radius has to be larger than 0"
 
-
-class Dubins(PathPlanner):
-    def __init__(self, params: DubinsParam):
-        self.params = params
-
-    def compute_path(self, start: SE2Transform, end: SE2Transform) -> list[SE2Transform]:
+    def compute_path(self, start: SE2Transform, end: SE2Transform, step_distance: float) -> list[SE2Transform]:
         """Generates an optimal Dubins path between start and end configuration
 
         :param start: the start configuration of the car (x,y,theta)
@@ -54,16 +55,24 @@ class Dubins(PathPlanner):
 
         :return: a list[SE2Transform] of configurations in the optimal path the car needs to follow
         """
-        path = self.calculate_dubins_path(start_config=start, end_config=end, radius=self.params.min_radius)
-        se2_list = self.extract_path_points(path)
+        start_circle, mid_segment, end_circle = self.calculate_dubins_path(
+            start_config=start, end_config=end, radius=self.min_radius
+        )
+
+        se2_list, left_distance = self.extract_path_points(start_circle, step_distance, 0)
+        if mid_segment is not None:
+            mid_list, left_distance = self.extract_path_points(mid_segment, step_distance, left_distance)
+            se2_list.extend(mid_list)
+        end_list, left_distance = self.extract_path_points(end_circle, step_distance, left_distance)
+        se2_list.extend(end_list)
+
         return se2_list
 
-    def calculate_car_turning_radius(self, wheel_base: float, max_steering_angle: float) -> DubinsParam:
+    def calculate_car_turning_radius(self, wheel_base: float, max_steering_angle: float) -> float:
         min_radius = wheel_base / np.tan(max_steering_angle)
-        return DubinsParam(min_radius=min_radius)
+        return min_radius
 
-    @staticmethod
-    def calculate_turning_circles(current_config: SE2Transform, radius: float) -> TurningCircle:
+    def calculate_turning_circles(self, current_config: SE2Transform, radius: float) -> TurningCircle:
         t_ab = current_config.as_SE2()
         t_bl = SE2Transform([0, radius], 0).as_SE2()
         t_br = SE2Transform([0, -radius], 0).as_SE2()
@@ -86,8 +95,7 @@ class Dubins(PathPlanner):
         )
         return TurningCircle(left=left_circle, right=right_circle)
 
-    @staticmethod
-    def calculate_tangent_btw_circles(circle_start: Curve, circle_end: Curve) -> list[Line]:
+    def calculate_tangent_btw_circles(self, circle_start: Curve, circle_end: Curve) -> list[Line]:
         c1 = circle_start.center.p
         c2 = circle_end.center.p
         if not circle_start.radius == circle_end.radius:
@@ -140,8 +148,7 @@ class Dubins(PathPlanner):
                 return [Line(start_config=start, end_config=end)]
         raise ValueError(f"Wrong configuration of circles found {cs_config}, {ce_config}")
 
-    @staticmethod
-    def third_circle_curve_above(circle_start: Curve, circle_end: Curve) -> Optional[Curve]:
+    def third_circle_curve_above(self, circle_start: Curve, circle_end: Curve) -> Optional[Curve]:
         c1 = circle_start.center.p
         c2 = circle_end.center.p
         r = circle_end.radius
@@ -176,8 +183,7 @@ class Dubins(PathPlanner):
         curve = Curve(start_config, end_config, center_config, r, direction, 0)
         return curve
 
-    @staticmethod
-    def third_circle_curve_below(circle_start: Curve, circle_end: Curve) -> Optional[Curve]:
+    def third_circle_curve_below(self, circle_start: Curve, circle_end: Curve) -> Optional[Curve]:
         c1 = circle_start.center.p
         c2 = circle_end.center.p
         r = circle_end.radius
@@ -212,8 +218,7 @@ class Dubins(PathPlanner):
         curve = Curve(start_config, end_config, center_config, r, direction, 0)
         return curve
 
-    @staticmethod
-    def change_arc_angle_between(circle: Curve) -> float:
+    def change_arc_angle_between(self, circle: Curve) -> float:
         """
         Changes internal arc angle and length of arc
         based on the start and end configuration set on the circle
@@ -232,47 +237,45 @@ class Dubins(PathPlanner):
         circle.arc_angle = diff
         return circle.arc_angle
 
-    @staticmethod
-    def csc_calculate(circle1: Curve, circle2: Curve):
-        lines = Dubins.calculate_tangent_btw_circles(circle1, circle2)
+    def csc_calculate(self, circle1: Curve, circle2: Curve):
+        lines = self.calculate_tangent_btw_circles(circle1, circle2)
         if len(lines) == 0:
             return 0.0, None
         line = lines[0]
         circle1.end_config = line.start_config
         circle2.start_config = line.end_config
-        Dubins.change_arc_angle_between(circle1)
-        Dubins.change_arc_angle_between(circle2)
+        self.change_arc_angle_between(circle1)
+        self.change_arc_angle_between(circle2)
         return circle1.length + line.length + circle2.length, line
 
-    @staticmethod
-    def ccc_above_calculate(circle1: Curve, circle2: Curve):
-        mid_circle = Dubins.third_circle_curve_above(circle1, circle2)
+    def ccc_above_calculate(self, circle1: Curve, circle2: Curve):
+        mid_circle = self.third_circle_curve_above(circle1, circle2)
         if mid_circle is None:
             return 0.0, None
         circle1.end_config = mid_circle.start_config
         circle2.start_config = mid_circle.end_config
-        Dubins.change_arc_angle_between(circle1)
-        Dubins.change_arc_angle_between(circle2)
-        Dubins.change_arc_angle_between(mid_circle)
+        self.change_arc_angle_between(circle1)
+        self.change_arc_angle_between(circle2)
+        self.change_arc_angle_between(mid_circle)
         return circle1.length + mid_circle.length + circle2.length, mid_circle
 
-    @staticmethod
-    def ccc_below_calculate(circle1: Curve, circle2: Curve):
-        mid_circle = Dubins.third_circle_curve_below(circle1, circle2)
+    def ccc_below_calculate(self, circle1: Curve, circle2: Curve):
+        mid_circle = self.third_circle_curve_below(circle1, circle2)
         if mid_circle is None:
             return 0.0, None
         circle1.end_config = mid_circle.start_config
         circle2.start_config = mid_circle.end_config
-        Dubins.change_arc_angle_between(circle1)
-        Dubins.change_arc_angle_between(circle2)
-        Dubins.change_arc_angle_between(mid_circle)
+        self.change_arc_angle_between(circle1)
+        self.change_arc_angle_between(circle2)
+        self.change_arc_angle_between(mid_circle)
         return circle1.length + mid_circle.length + circle2.length, mid_circle
 
-    @staticmethod
-    def calculate_dubins_path(start_config: SE2Transform, end_config: SE2Transform, radius: float) -> Path:
+    def calculate_dubins_path(
+        self, start_config: SE2Transform, end_config: SE2Transform, radius: float
+    ) -> tuple[Curve, Optional[Segment], Curve]:
         # Have to go through all possible Dubins path and check their lengths
-        start_circles = Dubins.calculate_turning_circles(start_config, radius)
-        end_circles = Dubins.calculate_turning_circles(end_config, radius)
+        start_circles = self.calculate_turning_circles(start_config, radius)
+        end_circles = self.calculate_turning_circles(end_config, radius)
         sr_circle = start_circles.right
         sl_circle = start_circles.left
         er_circle = end_circles.right
@@ -282,34 +285,34 @@ class Dubins(PathPlanner):
         total_lengths = [-1.0] * 8  # 8 configurations
 
         # RSR
-        total_len, curve = Dubins.csc_calculate(sr_circle, er_circle)
+        total_len, curve = self.csc_calculate(sr_circle, er_circle)
         total_lengths[0] = total_len if curve else -1.0
 
         # LSL
-        total_len, curve = Dubins.csc_calculate(sl_circle, el_circle)
+        total_len, curve = self.csc_calculate(sl_circle, el_circle)
         total_lengths[1] = total_len if curve else -1.0
 
         # RSL
-        total_len, curve = Dubins.csc_calculate(sr_circle, el_circle)
+        total_len, curve = self.csc_calculate(sr_circle, el_circle)
         total_lengths[2] = total_len if curve else -1.0
         # LSR
-        total_len, curve = Dubins.csc_calculate(sl_circle, er_circle)
+        total_len, curve = self.csc_calculate(sl_circle, er_circle)
         total_lengths[3] = total_len if curve else -1.0
 
         # RLR
-        total_len, curve = Dubins.ccc_above_calculate(sr_circle, er_circle)
+        total_len, curve = self.ccc_above_calculate(sr_circle, er_circle)
         total_lengths[4] = total_len if curve else -1.0
 
         # LRL
-        total_len, curve = Dubins.ccc_above_calculate(sl_circle, el_circle)
+        total_len, curve = self.ccc_above_calculate(sl_circle, el_circle)
         total_lengths[5] = total_len if curve else -1.0
 
         # RLR
-        total_len, curve = Dubins.ccc_below_calculate(sr_circle, er_circle)
+        total_len, curve = self.ccc_below_calculate(sr_circle, er_circle)
         total_lengths[6] = total_len if curve else -1.0
 
         # LRL
-        total_len, curve = Dubins.ccc_below_calculate(sl_circle, el_circle)
+        total_len, curve = self.ccc_below_calculate(sl_circle, el_circle)
         total_lengths[7] = total_len if curve else -1.0
 
         # index
@@ -324,83 +327,137 @@ class Dubins(PathPlanner):
 
         paths = []
         if min_idx == 0:
-            total_len, line = Dubins.csc_calculate(sr_circle, er_circle)
-            paths = [sr_circle, line, er_circle]
+            total_len, line = self.csc_calculate(sr_circle, er_circle)
+            paths = (sr_circle, line, er_circle)
         elif min_idx == 1:
-            total_len, line = Dubins.csc_calculate(sl_circle, el_circle)
-            paths = [sl_circle, line, el_circle]
+            total_len, line = self.csc_calculate(sl_circle, el_circle)
+            paths = (sl_circle, line, el_circle)
         elif min_idx == 2:
-            total_len, line = Dubins.csc_calculate(sr_circle, el_circle)
-            paths = [sr_circle, line, el_circle]
+            total_len, line = self.csc_calculate(sr_circle, el_circle)
+            paths = (sr_circle, line, el_circle)
         elif min_idx == 3:
-            total_len, line = Dubins.csc_calculate(sl_circle, er_circle)
-            paths = [sl_circle, line, er_circle]
+            total_len, line = self.csc_calculate(sl_circle, er_circle)
+            paths = (sl_circle, line, er_circle)
         elif min_idx == 4:
-            total_len, mid_circle = Dubins.ccc_above_calculate(sr_circle, er_circle)
-            paths = [sr_circle, mid_circle, er_circle]
+            total_len, mid_circle = self.ccc_above_calculate(sr_circle, er_circle)
+            paths = (sr_circle, mid_circle, er_circle)
         elif min_idx == 5:
-            total_len, mid_circle = Dubins.ccc_above_calculate(sl_circle, el_circle)
-            paths = [sl_circle, mid_circle, el_circle]
+            total_len, mid_circle = self.ccc_above_calculate(sl_circle, el_circle)
+            paths = (sl_circle, mid_circle, el_circle)
         elif min_idx == 6:
-            total_len, mid_circle = Dubins.ccc_below_calculate(sr_circle, er_circle)
-            paths = [sr_circle, mid_circle, er_circle]
+            total_len, mid_circle = self.ccc_below_calculate(sr_circle, er_circle)
+            paths = (sr_circle, mid_circle, er_circle)
         elif min_idx == 7:
-            total_len, mid_circle = Dubins.ccc_below_calculate(sl_circle, el_circle)
-            paths = [sl_circle, mid_circle, el_circle]
+            total_len, mid_circle = self.ccc_below_calculate(sl_circle, el_circle)
+            paths = (sl_circle, mid_circle, el_circle)
         else:
-            raise BeyondListError("Invalid min_idx %d", min_idx)
+            raise BeyondListError(f"Invalid min_idx {min_idx}")
 
         return paths
 
-    @staticmethod
-    def get_rot_matrix(alpha: float) -> np.ndarray:
+    def get_rot_matrix(self, alpha: float) -> np.ndarray:
         rot_matrix = np.array([[np.cos(alpha), -np.sin(alpha)], [np.sin(alpha), np.cos(alpha)]])
         return rot_matrix
 
-    @staticmethod
-    def get_next_point_on_curve(curve: Curve, point: SE2Transform, delta_angle: float) -> SE2Transform:
+    def get_next_point_on_curve(self, curve: Curve, point: SE2Transform, delta_angle: float) -> SE2Transform:
         point_translated = point.p - curve.center.p
-        rot_matrix = Dubins.get_rot_matrix(delta_angle)
+        rot_matrix = self.get_rot_matrix(delta_angle)
         next_point = SE2Transform((rot_matrix @ point_translated) + curve.center.p, point.theta + delta_angle)
         return next_point
 
-    @staticmethod
-    def interpolate_line_points(line: Line, number_of_points: int) -> List[SE2Transform]:
-        start = line.start_config
-        end = line.end_config
-        start_to_end = end.p - start.p
-        intervals = np.linspace(0, 1.0, number_of_points)
-        return [SE2Transform(start.p + i * start_to_end, start.theta) for i in intervals]
+    def get_next_point_on_line(self, line: Line, point: SE2Transform, delta_length: float) -> SE2Transform:
+        return SE2Transform(point.p + delta_length * line.direction, theta=point.theta)
 
-    @staticmethod
-    def interpolate_curve_points(curve: Curve, number_of_points: int) -> List[SE2Transform]:
+    def interpolate_line_points(
+        self, line: Line, start_length: float, step_length: float
+    ) -> tuple[List[SE2Transform], float]:
         pts_list = []
-        angle = curve.arc_angle
+        old_point = self.get_next_point_on_line(line, line.start_config, start_length)
+
+        total_length = line.length - start_length
+        num_samples = floor(total_length / step_length)
+        for _ in range(num_samples):
+            pts_list.append(old_point)
+            point_next = self.get_next_point_on_line(line, old_point, step_length)
+            old_point = point_next
+        left_distance = total_length - num_samples * step_length
+        return pts_list, left_distance
+
+    def interpolate_curve_points(
+        self, curve: Curve, start_angle: float, step_angle: float
+    ) -> tuple[List[SE2Transform], float]:
+        pts_list = []
+        old_point = self.get_next_point_on_curve(curve, curve.start_config, delta_angle=start_angle)
+
+        angle = curve.arc_angle - start_angle
         direction = curve.type
         angle = curve.gear.value * direction.value * angle
-        split_angle = angle / number_of_points
-        old_point = curve.start_config
-        for i in range(number_of_points):
+        num_samples = floor(angle / step_angle)
+        for _ in range(num_samples):
             pts_list.append(old_point)
-            point_next = Dubins.get_next_point_on_curve(curve, point=old_point, delta_angle=split_angle)
+            point_next = self.get_next_point_on_curve(curve, point=old_point, delta_angle=step_angle)
             old_point = point_next
-        return pts_list
+        left_angle = angle - num_samples * step_angle
+        return pts_list, left_angle
 
-    @staticmethod
-    def extract_path_points(path: Path) -> List[SE2Transform]:
+    def extract_path_points(
+        self, seg: Segment, max_distance_per_step: float, start_distance: float
+    ) -> tuple[List[SE2Transform], float]:
         """Extracts a fixed number of SE2Transform points on a path"""
-        pts_list = []
-        num_points_per_segment = 20
-        for idx, seg in enumerate(path):
-            seg.start_config.theta = mod_2_pi(seg.start_config.theta)
-            seg.end_config.theta = mod_2_pi(seg.end_config.theta)
-            if seg.type is DubinsSegmentType.STRAIGHT:
-                assert isinstance(seg, Line)
-                line_pts = Dubins.interpolate_line_points(seg, num_points_per_segment)
-                pts_list.extend(line_pts)
-            else:  # Curve
-                assert isinstance(seg, Curve)
-                curve_pts = Dubins.interpolate_curve_points(seg, num_points_per_segment)
-                pts_list.extend(curve_pts)
-        pts_list.append(path[-1].end_config)
-        return pts_list
+        seg.start_config.theta = mod_2_pi(seg.start_config.theta)
+        seg.end_config.theta = mod_2_pi(seg.end_config.theta)
+        if seg.type is DubinsSegmentType.STRAIGHT:
+            assert isinstance(seg, Line)
+            line_pts, left_distance = self.interpolate_line_points(seg, start_distance, max_distance_per_step)
+            return line_pts, left_distance
+        else:  # Curve
+            assert isinstance(seg, Curve)
+            init_angle = start_distance / self.min_radius
+            step_angle = max_distance_per_step / self.min_radius
+            curve_pts, left_angle = self.interpolate_curve_points(seg, init_angle, step_angle)
+            left_distance = self.min_radius * left_angle
+            return curve_pts, left_distance
+
+
+class DubinsTest(unittest.TestCase):
+    dubins: Dubins
+
+    def setUp(self):
+        wheel_base = 1.2
+        max_acceleration = 5
+        max_steering_angle = 1
+        self.dubins = Dubins(wheel_base, max_steering_angle)
+        v_max = np.sqrt(max_acceleration * wheel_base / np.tan(max_steering_angle))
+        dt = 0.1
+        self.step_length = v_max * dt
+
+    def testcase1(self):
+        start_config = SE2Transform([-26.27269412470485, 8.787346780714294], -0.011495208045596282)
+        end_config = SE2Transform([-27.132346369790178, 6.537920517155902], 0.0032153572)
+        trajectory = self.dubins.compute_path(start_config, end_config, self.step_length)
+        x = [state.p[0] for state in trajectory]
+        y = [state.p[1] for state in trajectory]
+        psi = [state.theta for state in trajectory]
+
+        # Calculate the components of the arrow (unit vectors scaled for visualization)
+        arrow_length = 0.2  # Length of the arrows
+        u = [arrow_length * np.cos(angle) for angle in psi]  # X-component
+        v = [arrow_length * np.sin(angle) for angle in psi]  # Y-component
+
+        # Plot the states and heading
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, y, "bo-", label="Path")  # Path
+        plt.quiver(
+            x, y, u, v, angles="xy", scale_units="xy", scale=1, color="red", label="Heading"
+        )  # Arrows for heading
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.title("Path with Heading Angles")
+        plt.legend()
+        plt.axis("equal")  # Ensure equal scaling for x and y axes
+        plt.grid()
+        plt.savefig("dubins.png")
+
+
+if __name__ == "__main__":
+    unittest.main()

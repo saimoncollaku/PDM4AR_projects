@@ -101,12 +101,6 @@ class FrenetSampler:
         road_width_l: float,
         road_width_r: float,
         road_res: float,
-        starting_d: float,
-        starting_dd: float,
-        starting_ddd: float,
-        starting_s: float,
-        starting_sd: float,
-        starting_sdd: float,
         dt: float = 0.1,
         max_t: float = 2.6,
         min_t: float = 2.0,
@@ -115,15 +109,6 @@ class FrenetSampler:
         self.max_road_l = road_width_l
         self.max_road_r = road_width_r
         self.road_res = road_res
-        self.last_samples = []
-        self.last_best = []
-
-        self.d0 = starting_d
-        self.ddot = starting_dd
-        self.ddotdot = starting_ddd
-        self.s0 = starting_s
-        self.sdot = starting_sd
-        self.sdotdot = starting_sdd
 
         self.min_v = min_speed
         self.max_v = max_speed
@@ -133,8 +118,8 @@ class FrenetSampler:
         self.max_t = max_t
         self.min_t = min_t
 
-    def get_paths_merge(self) -> list[Sample]:
-        self.last_samples = []
+    def get_paths_merge(self, s0, sdot, sdotdot, d0, ddot, ddotdot) -> list[Sample]:
+        last_samples = []
 
         # Lateral sampling
         for di in np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res):
@@ -143,7 +128,7 @@ class FrenetSampler:
             for ti in np.arange(self.min_t, self.max_t, self.dt):
                 fp = Sample()
 
-                lat_qp = Quintic(self.d0, self.ddot, self.ddotdot, di, 0.0, 0.0, ti)
+                lat_qp = Quintic(d0, ddot, ddotdot, di, 0.0, 0.0, ti)
 
                 fp.dt = self.dt
                 fp.t = np.arange(0.0, ti, self.dt)
@@ -155,7 +140,7 @@ class FrenetSampler:
                 # Longitudinal sampling
                 for vi in np.arange(self.min_v, self.max_v, self.v_res):
                     tfp = copy.deepcopy(fp)
-                    lon_qp = Quartic(self.s0, self.sdot, self.sdotdot, vi, 0.0, ti)
+                    lon_qp = Quartic(s0, sdot, sdotdot, vi, 0.0, ti)
 
                     tfp.s = [lon_qp.calc_point(t) for t in fp.t]
                     tfp.s_d = [lon_qp.calc_first_derivative(t) for t in fp.t]
@@ -164,14 +149,6 @@ class FrenetSampler:
 
                     tfp.T = len(tfp.t)
 
-                    self.last_samples.append(tfp)
+                    last_samples.append(tfp)
 
-        return self.last_samples
-
-    def assign_init_kinematics(self, s0, d0, sdot, ddot, sdotdot, ddotdot) -> None:
-        self.sdot = sdot
-        self.d0 = d0
-        self.s0 = s0
-        self.ddot = ddot
-        self.sdotdot = sdotdot
-        self.ddotdot = ddotdot
+        return last_samples

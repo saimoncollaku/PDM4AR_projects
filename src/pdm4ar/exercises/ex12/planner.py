@@ -6,7 +6,7 @@ from dg_commons import PlayerName
 from dg_commons.sim.goals import RefLaneGoal
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.planning import Trajectory
-from dg_commons.sim.models.vehicle import VehicleCommands, VehicleState
+from dg_commons.sim.models.vehicle import VehicleState
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 
@@ -46,7 +46,8 @@ class Planner:
         self.replan_count = 0
         self.last_replan_time = 0.0
         self.replan_in_t = params.start_planning_time
-        self.lane_psi = None  # set in the first get_commands
+        # set lane_psi the first get_commands
+        self.lane_psi = None  # type: ignore
 
         self.cmd_acc = 0
         self.cmd_ddelta = 0
@@ -92,7 +93,6 @@ class Planner:
         road_l = self.road_distances[0]
         road_r = self.road_distances[1]
         road_generic = self.road_distances[2]
-        s0 = current_frenet[0][0]
         d0 = current_frenet[0][1]
         if d0 > 0:
             road_l = road_generic * round(abs(d0) / road_generic)
@@ -107,28 +107,11 @@ class Planner:
             road_width_l=road_l,
             road_width_r=road_r,
             road_res=road_generic,
-            starting_d=d0,
-            starting_dd=0,
-            starting_ddd=0,
-            starting_s=s0,
-            starting_sd=current_state.vx,
-            starting_sdd=0,
             dt=self.agent_params.dt,
             max_t=self.agent_params.max_sample_time,
             min_t=self.agent_params.min_sample_time,
             v_res=self.agent_params.sdot_sample_space,
         )
-
-    def reinitialize_sampler(self, current_state: VehicleState):
-        current_cart = np.column_stack((current_state.x, current_state.y))
-        current_frenet = self.spline_ref.to_frenet(current_cart)
-        d0 = current_frenet[0][1]
-        s0 = current_frenet[0][0]
-        sdot = current_state.vx * np.cos(current_state.psi - self.lane_psi)
-        ddot = current_state.vx * np.sin(current_state.psi - self.lane_psi)
-        sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
-        ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
-        self.sampler.assign_init_kinematics(s0, d0, sdot, ddot, sdotdot, ddotdot)
 
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
         dt = self.agent_params.dt
@@ -163,7 +146,16 @@ class Planner:
         current_time = float(sim_obs.time)
         assert isinstance(current_state, VehicleState)
 
-        all_samples = self.sampler.get_paths_merge()
+        current_cart = np.column_stack((current_state.x, current_state.y))
+        current_frenet = self.spline_ref.to_frenet(current_cart)
+        d0 = current_frenet[0][1]
+        s0 = current_frenet[0][0]
+        sdot = current_state.vx * np.cos(current_state.psi - self.lane_psi)
+        ddot = current_state.vx * np.sin(current_state.psi - self.lane_psi)
+        sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
+        ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
+
+        all_samples = self.sampler.get_paths_merge(s0, sdot, sdotdot, d0, ddot, ddotdot)
         # logger.warning("Sampled {} paths".format(len(all_samples)))
 
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
@@ -211,6 +203,7 @@ class Planner:
             # self.replan_in_t = best_path.t[-1]
             self.replan_in_t = 1.0
 
+        print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
         self.plans.append(agent_traj)
         # self.plans.append(best_agent_traj)
         self.controller.set_reference(agent_traj)
@@ -242,8 +235,6 @@ class Planner:
             return 0.0, 0.0
 
         if np.isclose(float(current_time - self.last_replan_time), self.replan_in_t):
-            # logger.warning("Replanning at {}" % (current_time))
-            self.reinitialize_sampler(current_state)
             all_samples = self.replan(sim_obs)
 
             if self.visualize:

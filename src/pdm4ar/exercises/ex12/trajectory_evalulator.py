@@ -547,10 +547,6 @@ class Evaluator:
                     self.obs_kin[player]["prev_vx"] = curr_vx
 
     def get_costs(self, trajectory: Sample, sim_obs: SimObservations) -> dict:
-        # cartesian_points = self.spline_ref.get_xy(trajectory)
-        # trajectory.x = cartesian_points[:, 0]
-        # trajectory.y = cartesian_points[:, 1]
-
         if not isinstance(trajectory.x, np.ndarray):
             self.spline_ref.to_cartesian(trajectory)
         trajectory.compute_derivatives()

@@ -69,8 +69,9 @@ class SplineReference:
 
         return np.array(frenet_points)
 
-    def get_xy(self, sample: Sample):
-        cartesian_points = np.zeros((len(sample.t), 2))
+    def get_xy(self, sample: list[tuple[float, float]]):
+        cartesian_points = np.zeros((len(sample), 2))
+
         # Precompute cumulative lengths of the reference trajectory
         cumulative_lengths = np.cumsum(np.sqrt(np.diff(self.x) ** 2 + np.diff(self.y) ** 2))
         cumulative_lengths = np.concatenate(([0], cumulative_lengths))
@@ -79,7 +80,7 @@ class SplineReference:
         dx = np.gradient(self.x)
         dy = np.gradient(self.y)
 
-        for i, (s, d) in enumerate(zip(sample.s, sample.d)):
+        for i, (s, d) in enumerate(sample):
             # Find the closest point on the reference trajectory for the given s
             idx = np.argmin(np.abs(cumulative_lengths - s))
             if idx < len(self.x) - 1:
@@ -109,7 +110,7 @@ class SplineReference:
         theta_values = np.zeros(len(sample.t))
         kappa_values = np.zeros(len(sample.t))
 
-        cartesian_points = self.get_xy(sample)
+        cartesian_points = self.get_xy(list(zip(sample.s, sample.d)))
 
         # Compute curvature and orientation for the Cartesian points
         cart_dx = np.gradient(cartesian_points[:, 0])
