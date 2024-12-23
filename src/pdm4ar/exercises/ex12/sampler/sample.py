@@ -68,6 +68,7 @@ class Sample:
 
         self.kinematics_feasible = False
         self.collision_free = False
+        self.towards_goal = False
         self.cost = {}
 
     def get_xy_dot(self, cartesian_points: np.ndarray, time_grad: np.ndarray):

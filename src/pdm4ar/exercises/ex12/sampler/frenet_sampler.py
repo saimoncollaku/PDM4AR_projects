@@ -19,7 +19,7 @@ class FrenetSampler:
         road_width_l: float,
         road_width_r: float,
         road_res: float,
-        dt: float = 0.1,
+        del_t: float = 0.1,
         max_t: float = 2.6,
         min_t: float = 2.0,
         v_res: float = 2,
@@ -32,7 +32,8 @@ class FrenetSampler:
         self.max_v = max_speed
         self.v_res = v_res
 
-        self.dt = dt
+        self.del_t = del_t
+        self.dt = 0.1
         self.max_t = max_t
         self.min_t = min_t
 
@@ -40,7 +41,7 @@ class FrenetSampler:
         last_samples = []
 
         all_final_d = np.arange(-self.max_road_r, self.max_road_l + self.road_res, self.road_res)
-        all_final_t = np.arange(self.min_t, self.max_t, self.dt)
+        all_final_t = np.arange(self.min_t, self.max_t, self.del_t)
         all_final_v = np.arange(self.min_v, self.max_v, self.v_res)
         num_ts, num_ds, num_vs = len(all_final_t), len(all_final_d), len(all_final_v)
 

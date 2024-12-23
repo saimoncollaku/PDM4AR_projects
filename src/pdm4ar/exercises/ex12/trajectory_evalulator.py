@@ -87,7 +87,7 @@ class KinematicsFilter:
     def delta_filter(self):
         self.__trajectory.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(self.__trajectory.delta)
-        if np.max(np.abs(ddelta)) > 4 * self.sp.ddelta_max * self.__trajectory.dt:
+        if np.max(np.abs(ddelta)) > 2 * self.sp.ddelta_max * self.__trajectory.dt:
             return False
         return True
 
@@ -106,6 +106,8 @@ class KinematicsFilter:
         end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
 
         # print(d_start, d_end)
+        self.__trajectory.towards_goal = end_ref_dist < 1.0
+
         if start_ref_dist < 1.0 and not end_ref_dist < 1.0:
             # do not deviate from the reference once you reach it
             return False
@@ -486,6 +488,7 @@ class Evaluator:
         sp: VehicleParameters,
         sg: VehicleGeometry,
         visualize: bool,
+        fn_weights,
     ) -> None:
         ref_line = np.column_stack((spline_ref.x, spline_ref.y))
         self.name = init_obs.my_name
@@ -495,7 +498,7 @@ class Evaluator:
         self.dt = 0.1
 
         # acc, obs, ref, jerk, vel
-        self.fn_weights = [0.1, 2.0, 2.5, 0.005, 0.02]
+        self.fn_weights = fn_weights
 
         self.trajectory_cost = Cost(init_obs, ref_line, self.fn_weights)
         self.spline_ref = spline_ref
