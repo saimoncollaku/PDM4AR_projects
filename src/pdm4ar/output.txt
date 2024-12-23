@@ -1,0 +1,17 @@
+
+============
+0_scenario1
+============
+Plotting non_feasible: 408, and feasible: frenet: 15, dubin: 0
+Plotting non_feasible: 423, and feasible: frenet: 2, dubin: 0
+Plotting non_feasible: 395, and feasible: frenet: 27, dubin: 0
+Plotting non_feasible: 355, and feasible: frenet: 85, dubin: 0
+Plotting non_feasible: 338, and feasible: frenet: 92, dubin: 0
+Plotting non_feasible: 329, and feasible: frenet: 63, dubin: 0
+Plotting non_feasible: 399, and feasible: frenet: 36, dubin: 0
+Plotting non_feasible: 429, and feasible: frenet: 4, dubin: 0
+Plotting non_feasible: 446, and feasible: frenet: 4, dubin: 0
+Plotting non_feasible: 427, and feasible: frenet: 0, dubin: 0
+Plotting non_feasible: 407, and feasible: frenet: 0, dubin: 0
+Score: 82.38
+{"task_level": 0, "score": 82.38189139037496, "collided": false, "goal_reached": true, "min_ttc": 1.0999999999999999, "lane_changing_time": 9.3, "avg_relative_heading": 0.0806179614937697, "max_velocity": 9.831305247907167, "min_velocity": 1.9442082382413428, "discomfort": 0.6641544565244256, "avg_computation_time": 2.1983790399702925, "_lc_time_penalty": 0.8600000000000001, "_ttc_penalty": 0.0, "_solving_time_penalty": 1.0, "_discomfort_penalty": 0.19246336957327692, "_heading_penalty": 0.0, "_velocity_penalty": 0.6111583523517314}

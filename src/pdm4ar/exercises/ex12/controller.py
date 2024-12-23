@@ -146,7 +146,8 @@ class BasicController:
     def stanley_steer_control(self, curr_state):
         # Get the current target point
         # l_idx = self.lookahead_idx(self.curr_idx, curr_state)
-        target = self.target_traj.values[self.curr_idx]
+        l_idx = min(self.curr_idx + 1, len(self.target_traj.values) - 1)
+        target = self.target_traj.values[l_idx]
 
         # Compute heading error (wrap to [-pi, pi] for continuity)
         psi_e = (target.psi - curr_state.psi + np.pi) % (2 * np.pi) - np.pi
@@ -167,7 +168,7 @@ class BasicController:
         i_error = sum(self.error_psi)
         # Compute desired steering angle to correct lateral error
         psi_d = np.arctan2(self.psi_l_gain * axle_error, curr_state.vx + 1e-3)  # Avoid division by zero
-        steering_angle = self.psi_p_gain * psi_e + self.psi_d_gain * d_error + psi_d + self.psi_i_gain * i_error
+        steering_angle = self.psi_p_gain * psi_e + self.psi_i_gain * i_error + self.psi_d_gain * d_error + psi_d
 
         steering_angle = np.clip(steering_angle, -self.sp.ddelta_max, self.sp.ddelta_max)
         print(psi_e, target.psi, curr_state.psi, steering_angle, self.sp.ddelta_max)

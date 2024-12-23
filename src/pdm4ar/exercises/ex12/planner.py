@@ -62,7 +62,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = False
+        self.visualize = True
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
@@ -116,7 +116,7 @@ class Planner:
             max_speed=self.agent_params.max_sample_speed,
             road_width_l=road_l,
             road_width_r=road_r,
-            road_res=road_generic,
+            road_res=road_generic / 2,
             del_t=self.agent_params.sample_delta_time,
             max_t=self.agent_params.max_sample_time,
             min_t=self.agent_params.min_sample_time,
@@ -265,7 +265,8 @@ class Planner:
             best_agent_traj = Trajectory(timestamps, states)
 
             agent_traj = best_agent_traj
-            self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
+            # self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
+            self.replan_in_t = self.agent_params.replan_del_t
 
             # print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
             # self.replan_in_t = self.agent_params.replan_del_t
