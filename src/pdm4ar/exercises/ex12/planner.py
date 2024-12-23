@@ -57,6 +57,7 @@ class Planner:
         self.cmd_ddelta = 0
         self.min_ttc = 0
         self.stopping_time = 0
+        self.ref_progress = 0
 
         self.agent_params = params
         self.sp = sp
@@ -173,7 +174,7 @@ class Planner:
         current_time = float(sim_obs.time)
 
         # logger.warning("Replanning at %f", current_time)
-        ref_progress = self.get_ref_progress(current_state)
+        self.ref_progress = self.get_ref_progress(current_state)
         # logger.warning("Progress along reference: {:.2f}".format(ref_progress))
 
         assert isinstance(current_state, VehicleState)
@@ -242,7 +243,7 @@ class Planner:
         # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
         origin = best_path.origin.name
 
-        if ref_progress <= 0.9 and not (best_path.kinematics_feasible and best_path.collision_free):
+        if self.ref_progress <= 0.9 and not (best_path.kinematics_feasible and best_path.collision_free):
             logger.error("Entering emergency trajectory")
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
@@ -265,7 +266,7 @@ class Planner:
             best_agent_traj = Trajectory(timestamps, states)
 
             agent_traj = best_agent_traj
-            self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
+            self.replan_in_t = self.agent_params.replan_del_t
 
             # print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
             # self.replan_in_t = self.agent_params.replan_del_t
@@ -360,6 +361,8 @@ class Planner:
             self.visualizer.save_fig()
 
         self.cmd_acc, self.cmd_ddelta = self.controller.get_controls(current_state, sim_obs.time)
+        # if self.ref_progress >= 0.95:
+        # self.cmd_ddelta = 0.0
 
         if self.visualize:
             self.controller.plot_controller_perf(len(self.plans))
