@@ -58,14 +58,19 @@ class Dubins:
         start_circle, mid_segment, end_circle = self.calculate_dubins_path(
             start_config=start, end_config=end, radius=self.min_radius
         )
+        self.c1, self.c2, self.c3 = start_circle, mid_segment, end_circle
 
-        se2_list, left_distance = self.extract_path_points(start_circle, step_distance, 0)
+        se2_list = [start]
+        start_list, left_distance = self.extract_path_points(start_circle, step_distance, step_distance)
+
+        se2_list.extend(start_list)
         if mid_segment is not None:
             mid_list, left_distance = self.extract_path_points(mid_segment, step_distance, left_distance)
             se2_list.extend(mid_list)
         end_list, left_distance = self.extract_path_points(end_circle, step_distance, left_distance)
         se2_list.extend(end_list)
-
+        if not np.isclose(left_distance, 0):
+            se2_list.append(end)
         return se2_list
 
     def calculate_car_turning_radius(self, wheel_base: float, max_steering_angle: float) -> float:

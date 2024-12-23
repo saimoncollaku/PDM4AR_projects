@@ -64,7 +64,7 @@ class DubinSampler:
         logger.warning("Using trajectory generation velocity %f", trajectory_velocity)
         if trajectory_velocity > self.max_v or trajectory_velocity < self.min_v:
             logger.error("Out of velocity bounds: [%f, %f]", self.min_v, self.max_v)
-            return samples
+            # return samples
         sample_distance = trajectory_velocity * self.dt
         logger.warning("Sample minimum distance %d", sample_distance)
         for df in all_final_d:
@@ -74,15 +74,7 @@ class DubinSampler:
                 states_in_cartesian = self.spline_ref.get_xy(states_in_frenet)
                 init_state = states_in_cartesian[0, :]
                 final_state = states_in_cartesian[1, :]
-                logger.warning(
-                    "Initiat state: (%f, %f, %f); Final state: (%f, %f, %f)",
-                    init_state[0],
-                    init_state[1],
-                    psi0,
-                    final_state[0],
-                    final_state[1],
-                    self.lane_psi,
-                )
+
                 init_config = SE2Transform(init_state.tolist(), psi0)
                 final_config = SE2Transform(final_state.tolist(), self.lane_psi)
                 waypoints = self.dubins_generator.compute_path(init_config, final_config, sample_distance)
@@ -90,7 +82,7 @@ class DubinSampler:
 
                 sample = Sample()
                 sample.dt = self.dt
-                sample.t = np.arange(0, len(waypoints) * self.dt, self.dt)
+                sample.t = np.arange(0, len(waypoints), 1) * self.dt
                 sample.T = len(sample.t)
                 sample.x = np.array([waypoint.p[0] for waypoint in waypoints])
                 sample.y = np.array([waypoint.p[1] for waypoint in waypoints])
