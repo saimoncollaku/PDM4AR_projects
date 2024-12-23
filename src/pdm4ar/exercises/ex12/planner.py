@@ -6,8 +6,8 @@ from dg_commons import PlayerName
 from dg_commons.sim.goals import RefLaneGoal
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.planning import Trajectory
-from dg_commons.sim.models.vehicle import VehicleCommands, VehicleState
 from dg_commons.sim.models.vehicle_utils import VehicleParameters
+from dg_commons.sim.models.vehicle import VehicleState
 from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.eval.safety import _get_ttc_of_poly_and_state
 
@@ -17,7 +17,9 @@ from pdm4ar.exercises.ex12.params import Pdm4arAgentParams
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 from pdm4ar.exercises.ex12.trajectory_evalulator import Evaluator
 from pdm4ar.exercises.ex12.controller import BasicController as Controller
-from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler, Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample, Samplers
+from pdm4ar.exercises.ex12.sampler.frenet_sampler import FrenetSampler
+from pdm4ar.exercises.ex12.sampler.dubins_sampler import DubinSampler
 from pdm4ar.exercises.ex12.sampler.sim_env_coesion import obtain_complete_ref, get_lanelet_distances
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,8 @@ class Planner:
 
     controller: Controller
     evaluator: Evaluator
-    sampler: FrenetSampler
+    fsampler: FrenetSampler
+    dsampler: DubinSampler
     cmd_acc: float
     cmd_ddelta: float
     road_distances: tuple[float, float, float]
@@ -47,7 +50,8 @@ class Planner:
         self.replan_count = 0
         self.last_replan_time = 0.0
         self.replan_in_t = params.start_planning_time
-        self.lane_psi = None  # set in the first get_commands
+        # set lane_psi the first get_commands
+        self.lane_psi = None  # type: ignore
 
         self.cmd_acc = 0
         self.cmd_ddelta = 0
@@ -58,6 +62,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
+        self.visualize = True
         self.visualize = True
         self.all_timesteps = []
         self.all_states = []
@@ -107,59 +112,54 @@ class Planner:
             road_l = 0
             road_r = road_generic * round(abs(d0) / road_generic)
 
-        self.sampler = FrenetSampler(
+        self.fsampler = FrenetSampler(
             min_speed=self.agent_params.min_sample_speed,
             max_speed=self.agent_params.max_sample_speed,
             road_width_l=road_l,
             road_width_r=road_r,
             road_res=road_generic,
-            starting_d=d0,
-            starting_dd=0,
-            starting_ddd=0,
-            starting_s=s0,
-            starting_sd=current_state.vx,
-            starting_sdd=0,
             del_t=self.agent_params.sample_delta_time,
             max_t=self.agent_params.max_sample_time,
             min_t=self.agent_params.min_sample_time,
             v_res=self.agent_params.sdot_sample_space,
         )
 
-    def reinitialize_sampler(self, current_state: VehicleState):
-        current_cart = np.column_stack((current_state.x, current_state.y))
-        current_frenet = self.spline_ref.to_frenet(current_cart)
-        d0 = current_frenet[0][1]
-        s0 = current_frenet[0][0]
-        sdot = current_state.vx * np.cos(current_state.psi - self.lane_psi)
-        ddot = current_state.vx * np.sin(current_state.psi - self.lane_psi)
-        sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
-        ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
-        self.sampler.assign_init_kinematics(s0, d0, sdot, ddot, sdotdot, ddotdot)
+        self.dsampler = DubinSampler(
+            min_speed=self.agent_params.lower_limit_v,
+            max_speed=self.agent_params.max_sample_speed,
+            step_speed=self.agent_params.sdot_sample_space,  # this isn't necessarily in sdot
+            road_width_l=road_l,
+            road_width_r=road_r,
+            s_max=10,
+            sample_ds=0.5,
+            sample_dd=road_generic,
+            lane_psi=self.lane_psi,
+            wheel_base=self.sg.wheelbase,
+            max_steering_angle=self.sp.delta_max,
+            max_acceleration=self.sp.acc_limits[1],
+            dt=self.agent_params.dt,
+            spline_ref=self.spline_ref,
+        )
 
     def emergency_stop_trajectory(self, init_state: VehicleState, current_time: float, time_steps: int):
         dt = self.agent_params.dt
 
+        ux = init_state.vx * np.cos(self.lane_psi)
+        uy = init_state.vx * np.sin(self.lane_psi)
         max_deceleration = self.sp.acc_limits[0]
-        # req_decel = max(max_deceleration, (self.sampler.min_v - init_state.vx) / dt)
-        req_decel = max_deceleration
-
+        ax = max_deceleration * np.cos(self.lane_psi)
+        ay = max_deceleration * np.sin(self.lane_psi)
         states = [init_state]
         for step in range(1, time_steps):
-            v = max(init_state.vx + req_decel * dt * step, self.sampler.min_v)
-            # v = init_state.vx + req_decel * dt * step
-            ux, uy = init_state.vx * np.cos(states[-1].psi), init_state.vx * np.sin(states[-1].psi)
-
-            vx, vy = v * np.cos(states[-1].psi), v * np.sin(states[-1].psi)
-            ax, ay = req_decel * np.cos(states[-1].psi), req_decel * np.sin(states[-1].psi)
-
-            x, y = (((vx**2) - (ux**2)) / (2 * ax)) + init_state.x, (((vy**2) - (uy**2)) / (2 * ay)) + init_state.y
-            # psi = np.arctan2(y - states[-1].y, x - states[-1].x)
-            psi = states[-1].psi + dt * v * np.tan(states[-1].delta) / self.sg.wheelbase
-
+            t = dt * step
+            v = max(init_state.vx + max_deceleration * t, self.agent_params.lower_limit_v)
+            vx = v * np.cos(self.lane_psi)
+            vy = v * np.sin(self.lane_psi)
+            x, y = (vx**2 - ux**2) / (2 * ax) + init_state.x, (vy**2 - uy**2) / (2 * ay) + init_state.y
             state = VehicleState(
                 x=x,
                 y=y,
-                psi=psi,
+                psi=self.lane_psi,
                 vx=v,
                 delta=np.arctan2((self.lane_psi - states[-1].psi) / dt, v / self.sg.wheelbase),
             )
@@ -173,11 +173,12 @@ class Planner:
         current_state = sim_obs.players[self.my_name].state
         current_time = float(sim_obs.time)
 
+        logger.warning("Replanning at %f", current_time)
         ref_progress = self.get_ref_progress(current_state)
         # logger.warning("Progress along reference: {:.2f}".format(ref_progress))
 
         assert isinstance(current_state, VehicleState)
-
+        # Stop processing if can't avoid collision early
         if (
             self.min_ttc != np.inf
             and self.min_ttc < self.stopping_time
@@ -187,57 +188,95 @@ class Planner:
             timesteps = self.agent_params.emergency_timesteps
             agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
             self.replan_in_t = timesteps * self.agent_params.dt
-            all_samples = None
+            self.plans.append(agent_traj)
+            # self.plans.append(best_agent_traj)
+            self.controller.set_reference(agent_traj)
+            self.last_replan_time = current_time
+
+            return []
+
+        # Sample from Frenet Sampler
+        current_cart = np.column_stack((current_state.x, current_state.y))
+        current_frenet = self.spline_ref.to_frenet(current_cart)
+        d0 = current_frenet[0][1]
+        s0 = current_frenet[0][0]
+        sdot = current_state.vx * np.cos(current_state.psi - self.lane_psi)
+        ddot = current_state.vx * np.sin(current_state.psi - self.lane_psi)
+        sdotdot = self.cmd_acc * np.cos(current_state.psi - self.lane_psi)
+        ddotdot = self.cmd_acc * np.sin(current_state.psi - self.lane_psi)
+
+        frenet_samples = self.fsampler.get_paths(s0, sdot, sdotdot, d0, ddot, ddotdot)
+
+        # Sample from Dubin Sampler
+        # dubin_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
+        # Accumulate all samples
+        # all_samples = frenet_samples + dubin_samples
+        all_samples = frenet_samples
+        best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
+        best_path = all_samples[best_path_index]
+        # min_cost = costs[best_path_index]
+        ffeasible = 0
+        for fs in frenet_samples:
+            if fs.collision_free and fs.kinematics_feasible:
+                ffeasible += 1
+
+        dfeasible = 0
+        for ds in dubin_samples:
+            if ds.kinematics_feasible and ds.collision_free:
+                dfeasible += 1
+
+        logger.warning(
+            "Valid paths: Frenet: %d/%d, Dubin: %d/%d", ffeasible, len(frenet_samples), dfeasible, len(dubin_samples)
+        )
+
+        costs = np.sort(costs)
+        # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
+        # logger.warning(
+        #     "Path {}: cost {:.3f}, kinematics_feasible: {}, collision_free: {}"
+        #     % (best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free)
+        # )  # type: ignore
+        # logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")  # type: ignore
+
+        # start_pt = np.stack([best_path.x[0], best_path.y[0]])
+        # start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
+        # end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
+        # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
+        # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+        origin = best_path.origin.name
+
+        if ref_progress <= 0.9 and not (best_path.kinematics_feasible and best_path.collision_free):
+            logger.error("Entering emergency trajectory")
+            timesteps = self.agent_params.emergency_timesteps
+            agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
+            self.replan_in_t = timesteps * self.agent_params.dt
         else:
-            all_samples = self.sampler.get_paths_merge()
-            # logger.warning("Sampled {} paths".format(len(all_samples)))
+            logger.warning("Replanning at {}".format(current_time))
 
-            best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
-            # min_cost = costs[best_path_index]
-            best_path = all_samples[best_path_index]
-            # best_path_index, min_cost = self.check_paths(all_samples)
+            best_path.compute_steering(self.sg.wheelbase)
+            # ddelta = np.gradient(best_path.delta)
+            # logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
 
-            costs = np.sort(costs)
-            # logger.warning("Least 3 costs: {:.3f} {:.3f} {:.3f}" % (costs[0], costs[1], costs[2]))  # type: ignore
-            # logger.warning(
-            #     "Path {}: cost {:.3f}, kinematics_feasible: {}, collision_free: {}"
-            #     % (best_path_index, min_cost, best_path.kinematics_feasible, best_path.collision_free)
-            # )  # type: ignore
-            # logger.warning(f"kinematics_feasible_dict: {best_path.kinematics_feasible_dict}")  # type: ignore
+            timestamps = list(best_path.t + current_time)
+            states = [
+                VehicleState(best_path.x[i], best_path.y[i], best_path.psi[i], best_path.vx[i], best_path.delta[i])
+                for i in range(best_path.T)
+            ]
+            states[0] = current_state
+            states[-1].psi = self.lane_psi  # assume heading aligned to lane at the end of trajectory
+            states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix for delta bump
+            best_agent_traj = Trajectory(timestamps, states)
 
-            # start_pt = np.stack([best_path.x[0], best_path.y[0]])
-            # start_ref_dist = np.min(np.linalg.norm(self.reference - start_pt, ord=2, axis=1))
-            # end_pt = np.stack([best_path.x[-1], best_path.y[-1]])
-            # end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
-            # logger.warning("Starting ref dist: {:.3f}, Ending ref dist: {:.3f}".format(start_ref_dist, end_ref_dist))
+            agent_traj = best_agent_traj
+            self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
 
-            if ref_progress <= 0.9 and not (best_path.kinematics_feasible and best_path.collision_free):
-                logger.error("No feasible paths, Entering emergency trajectory")
-                timesteps = self.agent_params.emergency_timesteps
-                agent_traj = self.emergency_stop_trajectory(current_state, current_time, timesteps)
-                self.replan_in_t = timesteps * self.agent_params.dt
-            else:
-                # logger.warning("Replanning at {}".format(current_time))
+            # print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
+            # self.replan_in_t = self.agent_params.replan_del_t
+        if self.visualize:
+            self.visualizer.plot_scenario(sim_obs)
+            self.visualizer.plot_samples_without_background(agent_traj, all_samples)
+            self.visualizer.clear_viz()
 
-                best_path.compute_steering(self.sg.wheelbase)
-                # ddelta = np.gradient(best_path.delta)
-                # logger.warning("Best path ddelta max: {:.3f}".format(np.max(np.abs(ddelta))))
-
-                timestamps = list(best_path.t + current_time)
-                states = [
-                    VehicleState(best_path.x[i], best_path.y[i], best_path.psi[i], best_path.vx[i], best_path.delta[i])
-                    for i in range(best_path.T)
-                ]
-                states[0] = current_state
-                states[-1].psi = self.lane_psi  # assume heading aligned to lane at the end of trajectory
-                states[-2].delta = (states[-1].delta + states[-3].delta) / 2  # hacky fix for delta bump
-                best_agent_traj = Trajectory(timestamps, states)
-
-                agent_traj = best_agent_traj
-                self.replan_in_t = best_path.t[-1] if best_path.towards_goal else self.agent_params.replan_del_t
-
-                # print("max steering rate: {:.2f}".format(np.max(np.abs(np.gradient(best_path.delta)))))
-                # self.replan_in_t = self.agent_params.replan_del_t
+        logger.warning("Choosing %s sampled trajectory", origin)
 
         self.plans.append(agent_traj)
         # self.plans.append(best_agent_traj)
@@ -304,17 +343,7 @@ class Planner:
             and self.min_ttc < self.stopping_time
             and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps
         ):
-            # or (
-            # self.min_ttc < self.agent_params.max_min_ttc
-            # and self.replan_in_t > self.agent_params.dt * self.agent_params.emergency_timesteps)
-            logger.warning("Replanning at {}".format(current_time))
-            self.reinitialize_sampler(current_state)
-            all_samples = self.replan(sim_obs)
-
-            if self.visualize:
-                self.visualizer.plot_scenario(sim_obs)
-                self.visualizer.plot_samples(all_samples, self.sg.wheelbase, len(self.plans))
-                self.visualizer.clear_viz()
+            self.replan(sim_obs)
 
         if self.visualize:
             self.visualizer.plot_scenario(sim_obs)

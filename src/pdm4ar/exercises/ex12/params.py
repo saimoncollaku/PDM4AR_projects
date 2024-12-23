@@ -17,3 +17,4 @@ class Pdm4arAgentParams:
     replan_del_t: float = 1.0
     max_min_ttc: float = 0.8
     eval_weights = [0.1, 5.0, 2.0, 0.005, 0.02]
+    lower_limit_v = 2.5  # this is used for Dubin's and emergency
