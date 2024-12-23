@@ -393,7 +393,6 @@ class Dubins:
     ) -> tuple[List[SE2Transform], float]:
         pts_list = []
         old_point = self.get_next_point_on_curve(curve, curve.start_config, delta_angle=start_angle)
-        print("Inside interpolate_curve_points:", start_angle)
 
         angle = curve.arc_angle - start_angle
         direction = curve.type
@@ -473,6 +472,7 @@ class Dubins:
         plt.axis("equal")  # Ensure equal scaling for x and y axes
         plt.grid()
         plt.savefig("dubins.png")
+        plt.close()
 
 
 class DubinsTest(unittest.TestCase):

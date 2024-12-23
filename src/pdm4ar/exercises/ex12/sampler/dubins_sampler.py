@@ -5,6 +5,7 @@ from dg_commons import SE2Transform
 from pdm4ar.exercises.ex12.sampler.frenet_sampler import Sample
 from pdm4ar.exercises.ex12.sampler.dubins_algo import Dubins
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
+from pdm4ar.exercises.ex12.sampler.sample import Samplers
 
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ class DubinSampler:
             logger.error("Out of velocity bounds: [%f, %f]", self.min_v, self.max_v)
             # return samples
         sample_distance = trajectory_velocity * self.dt
-        logger.warning("Sample minimum distance %d", sample_distance)
+        logger.warning("Sample minimum distance %f", sample_distance)
         for df in all_final_d:
             for sf in all_final_s:
 
@@ -90,5 +91,6 @@ class DubinSampler:
                 sample.vx = np.array([trajectory_velocity for _ in waypoints])
                 sample.store_kappa()
                 samples.append(sample)
+                sample.origin = Samplers.DUBINS
 
         return samples

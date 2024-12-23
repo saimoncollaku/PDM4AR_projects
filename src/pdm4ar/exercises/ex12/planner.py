@@ -58,7 +58,7 @@ class Planner:
         self.sp = sp
         self.sg = sg
 
-        self.visualize = False
+        self.visualize = True
         self.all_timesteps = []
         self.all_states = []
         self.plans = []
@@ -182,6 +182,7 @@ class Planner:
         # Sample from Dubin Sampler
         more_samples = self.dsampler.get_paths(s0, d0, current_state.psi, current_state.vx)
         all_samples.extend(more_samples)
+        self.visualizer.plot_samples(more_samples, self.sg.wheelbase, "dubins")
 
         best_path_index, costs = self.evaluator.get_best_path(all_samples, sim_obs)
         best_path = all_samples[best_path_index]
@@ -225,6 +226,7 @@ class Planner:
             agent_traj = best_agent_traj
             # self.replan_in_t = best_path.t[-1]
             self.replan_in_t = 1.0
+        logger.warning("Choosing %s sampled trajectory", best_path.origin.name)
 
         # print([(time, state.x, state.y, state.psi, state.vx, state.delta) for time, state in agent_traj])
         self.plans.append(agent_traj)
