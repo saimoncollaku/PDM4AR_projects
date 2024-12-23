@@ -14,7 +14,7 @@ from dg_commons.sim.models.vehicle_structures import VehicleGeometry
 from dg_commons.sim import SimObservations, InitSimObservations
 from dg_commons.sim.models.vehicle import VehicleState
 
-from pdm4ar.exercises.ex12.sampler.frenet_sampler import Sample
+from pdm4ar.exercises.ex12.sampler.sample import Sample
 from pdm4ar.exercises.ex12.sampler.b_spline import SplineReference
 
 
@@ -66,7 +66,7 @@ class KinematicsFilter:
         pure_acceleration = scalar_value(self.__trajectory.xdotdot, self.__trajectory.ydotdot)
         max_acceleration = np.max(pure_acceleration)
         min_acceleration = np.min(pure_acceleration)
-        if self.sp.acc_limits[0] > min_acceleration or self.sp.acc_limits[1] < max_acceleration:
+        if self.sp.acc_limits[0] > 0.8 * min_acceleration or self.sp.acc_limits[1] < 0.8 * max_acceleration:
             return False
         return True
 
@@ -87,7 +87,7 @@ class KinematicsFilter:
     def delta_filter(self):
         self.__trajectory.compute_steering(self.sg.wheelbase)
         ddelta = np.gradient(self.__trajectory.delta)
-        if np.max(np.abs(ddelta)) > 4 * self.sp.ddelta_max * self.__trajectory.dt:
+        if np.max(np.abs(ddelta)) > self.sp.ddelta_max * self.__trajectory.dt:
             return False
         return True
 
@@ -106,6 +106,8 @@ class KinematicsFilter:
         end_ref_dist = np.min(np.linalg.norm(self.reference - end_pt, ord=2, axis=1))
 
         # print(d_start, d_end)
+        self.__trajectory.towards_goal = end_ref_dist < 1.0
+
         if start_ref_dist < 1.0 and not end_ref_dist < 1.0:
             # do not deviate from the reference once you reach it
             return False
@@ -292,6 +294,7 @@ class Cost:
     def __init__(self, init_obs: InitSimObservations, ref_line: np.ndarray, fn_weights: list) -> None:
         self.name = init_obs.my_name
         assert isinstance(init_obs.model_geometry, VehicleGeometry)
+        assert isinstance(init_obs.model_params, VehicleParameters)
 
         self.sg = init_obs.model_geometry
         self.sp = init_obs.model_params
@@ -402,6 +405,8 @@ class Cost:
             if player != self.name:
                 obs_box = self.__observations.players[player].occupancy
                 obs_state = self.__observations.players[player].state
+                assert isinstance(obs_box, Polygon)
+                assert isinstance(obs_state, VehicleState)
                 obx, oby = obs_box.exterior.xy
                 obs_head = np.array([np.cos(obs_state.psi), np.sin(obs_state.psi)])
                 obs_perp = np.array([-np.sin(obs_state.psi), np.cos(obs_state.psi)])
@@ -445,9 +450,9 @@ class Cost:
                     obs_dist = np.linalg.norm(obs_vec, 2)
                     stop_dist = 0.4
 
-                    if i > self.__trajectory.T - 6:
-                        if np.arccos(np.dot(obs_vec, obs_head) / obs_dist) > 0.98 * np.pi:
-                            stop_dist = (max(pt_vx - obs_vel, 0)) ** 2 / abs(self.sp.acc_limits[0])
+                    # if i > self.__trajectory.T - 6:
+                    #     if np.arccos(np.dot(obs_vec, obs_head) / obs_dist) > 0.98 * np.pi:
+                    #         stop_dist = (max(pt_vx - obs_vel, 0)) ** 2 / abs(self.sp.acc_limits[0])
 
                     self_box = self.get_box(pt_x, pt_y, pt_psi, stop_dist)
 
@@ -483,6 +488,7 @@ class Evaluator:
         sp: VehicleParameters,
         sg: VehicleGeometry,
         visualize: bool,
+        fn_weights,
     ) -> None:
         ref_line = np.column_stack((spline_ref.x, spline_ref.y))
         self.name = init_obs.my_name
@@ -492,7 +498,7 @@ class Evaluator:
         self.dt = 0.1
 
         # acc, obs, ref, jerk, vel
-        self.fn_weights = [0.1, 2.0, 2.5, 0.005, 0.02]
+        self.fn_weights = fn_weights
 
         self.trajectory_cost = Cost(init_obs, ref_line, self.fn_weights)
         self.spline_ref = spline_ref
@@ -547,10 +553,6 @@ class Evaluator:
                     self.obs_kin[player]["prev_vx"] = curr_vx
 
     def get_costs(self, trajectory: Sample, sim_obs: SimObservations) -> dict:
-        # cartesian_points = self.spline_ref.get_xy(trajectory)
-        # trajectory.x = cartesian_points[:, 0]
-        # trajectory.y = cartesian_points[:, 1]
-
         if not isinstance(trajectory.x, np.ndarray):
             self.spline_ref.to_cartesian(trajectory)
         trajectory.compute_derivatives()

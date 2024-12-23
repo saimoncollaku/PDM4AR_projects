@@ -13,7 +13,7 @@ class BasicController:
         self.i_gain = 6.0
         self.d_gain = 2.0
 
-        self.p_gain_delta = 10.0
+        self.p_gain_delta = 8.0
         self.i_gain_delta = 0.5
         self.d_gain_delta = 4.0
 
@@ -27,6 +27,7 @@ class BasicController:
         self.l = self.sg.lf
         self.curr_idx = -1
         self.curr_states = []
+        self.track_error = 0
 
         self.visualize = visualize
         if self.visualize:
@@ -176,5 +177,10 @@ class BasicController:
         self.curr_states.append([curr_state.vx, curr_state.delta])
         acc = self.speed_control(curr_state.vx)
         ddelta = self.steer_control(curr_state)
+        self.track_error = np.linalg.norm(
+            np.array([curr_state.x, curr_state.y])
+            - np.array([self.target_traj.values[self.curr_idx].x, self.target_traj.values[self.curr_idx].y]),
+            ord=2,
+        )
         self.curr_idx = self.update_progress_time(float(t))
         return acc, ddelta
