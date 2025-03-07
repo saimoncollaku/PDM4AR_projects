@@ -1,15 +1,16 @@
-# PDM4AR-exercises
+# Exercises and Projects PDM4AR
+This repository contains the solution code for the exercises and projects of the course **PDM4AR** (Planning and Decision Making for Autonomous Robots), taught by **Emilio Frazzoli** at ETH Zurich in 2024.
 
-All the necessary instructions are on our website: [https://pdm4ar.github.io/exercises/](https://pdm4ar.github.io/exercises/).
+## Overview
+The repository is organized as follows:
+- The **master branch** contains solutions to individual exercises.
+- The exercises focus on the **implementation of classic algorithms** related to planning, such as:
+  - **A\***
+  - **Collision checkers**
+  - **Markov Decision Processes (MDPs)**
+  - and other related topics
 
-### Highlights from the previous year
-
-|                                            *Using safety certificates*                                             |                                                  *Informed RRT**                                                   |                                       *Navigating through an asteroids' field*                                        |
-|:------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|
-| <img src="https://user-images.githubusercontent.com/18750753/194148816-c19705da-9c0a-42a8-ad2f-137706b4b07b.png"/> | <img src="https://user-images.githubusercontent.com/79461707/156462386-3d27f2f3-669e-414f-9134-fbc28b89ed49.png"/> | <video src="https://user-images.githubusercontent.com/79461707/156427479-312f6e81-f16a-478d-add3-de01ce2eece4.mp4" /> |
-
-But remember that the first time it is never easy...
-
-|                                                                                       *Out of control*                                                                                        |                                               *Some seeds are tougher*                                                |                                                 *The Drunkard's Walk*                                                 |
-|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|
-| ![PDM4AR-final21-staticenvironment0-PDM4AR-EpisodeVisualisation-figure1-Animation (1)](https://user-images.githubusercontent.com/18750753/194147922-20cdc861-830b-42e0-9282-9d0955c5cf77.gif) | <video src="https://user-images.githubusercontent.com/18750753/194151123-2c98d01f-8e18-46e4-92b0-31b94f6d0842.mp4" /> | <video src="https://user-images.githubusercontent.com/18750753/194152429-9d2d454f-a878-48fd-be8f-70cadf68d2bf.mp4" /> |
+## Exercise Descriptions
+The descriptions and details for each exercise can be found in the following locations:
+- [Course Exercise Documentation](https://pdm4ar.github.io/exercises/)
+- The **docs** folder within the repository
