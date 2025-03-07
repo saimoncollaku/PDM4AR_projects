@@ -1,5 +1,5 @@
 # Exercises and Projects PDM4AR
-This repository contains the solution code for the exercises and projects of the course **PDM4AR** (Planning and Decision Making for Autonomous Robots), taught by **Emilio Frazzoli** at ETH Zurich in 2024.
+This repository contains the solution code for the exercises and projects of the course **PDM4AR** (Planning and Decision Making for Autonomous Robots), taught by Professor **Emilio Frazzoli** at ETH Zurich in 2024.
 
 ## Overview
 The repository is organized as follows:
