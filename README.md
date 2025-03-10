@@ -1,15 +1,19 @@
-# PDM4AR-exercises
+## Problem Request & Approach
+**Request:**  
+Implement a planning and control stack that receives observations from a 2D Lidar sensor and outputs control commands to execute a lane change. The system must navigate mixed traffic without collisions, while respecting vehicle dynamics and road constraints.
 
-All the necessary instructions are on our website: [https://pdm4ar.github.io/exercises/](https://pdm4ar.github.io/exercises/).
+**Approach:**  
+Our implementation is **sampling-based** using **Frenet curves**. This method allowed us to:
+- **Sample multiple candidate trajectories:** by converting the problem into the Frenet coordinate system.
+- **Evaluate each trajectory:** based on safety, efficiency, and comfort, considering the vehicle's kinematic constraints.
+- **Select the optimal path:** that facilitates a smooth and safe lane change.
+- **Integrate with the simulator:** ensuring timely command updates in a closed-loop setup.
 
-### Highlights from the previous year
+## Demonstration
+Below is a video demonstration of our highway driving solution. Click on the preview to play the video.
 
-|                                            *Using safety certificates*                                             |                                                  *Informed RRT**                                                   |                                       *Navigating through an asteroids' field*                                        |
-|:------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|
-| <img src="https://user-images.githubusercontent.com/18750753/194148816-c19705da-9c0a-42a8-ad2f-137706b4b07b.png"/> | <img src="https://user-images.githubusercontent.com/79461707/156462386-3d27f2f3-669e-414f-9134-fbc28b89ed49.png"/> | <video src="https://user-images.githubusercontent.com/79461707/156427479-312f6e81-f16a-478d-add3-de01ce2eece4.mp4" /> |
-
-But remember that the first time it is never easy...
-
-|                                                                                       *Out of control*                                                                                        |                                               *Some seeds are tougher*                                                |                                                 *The Drunkard's Walk*                                                 |
-|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------:|
-| ![PDM4AR-final21-staticenvironment0-PDM4AR-EpisodeVisualisation-figure1-Animation (1)](https://user-images.githubusercontent.com/18750753/194147922-20cdc861-830b-42e0-9282-9d0955c5cf77.gif) | <video src="https://user-images.githubusercontent.com/18750753/194151123-2c98d01f-8e18-46e4-92b0-31b94f6d0842.mp4" /> | <video src="https://user-images.githubusercontent.com/18750753/194152429-9d2d454f-a878-48fd-be8f-70cadf68d2bf.mp4" /> |
+<div align="center">
+  <a href="car.mp4">
+    <img src="car.gif" alt="Highway Driving Demonstration" style="max-width:600px;">
+  </a>
+</div>
